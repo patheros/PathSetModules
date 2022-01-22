@@ -1,0 +1,830 @@
+/*
+Copyright: Andrew Hanson
+License: GNU GPL-3.0
+*/
+
+
+#include "plugin.hpp"
+#include "dsp/ringbuffer.hpp"
+#include "filters/pitchshifter.h"
+
+static const int BUFFER_COUNT = 6;
+
+//Note this assumes 44.1khz to achive a max cube size of 10 seconds
+static const int ASSUMED_SAMPLE_RATE = 44100;
+
+static const float CROSS_FADE_SECONDS = 0.15f; //In Seconds
+static const int CROSS_FADE_AMT = CROSS_FADE_SECONDS * ASSUMED_SAMPLE_RATE;
+
+static const int BUFFER_LENGTH_SECONDS_KNOB_MAX = 10.f;
+static const int BUFFER_LENGTH_SECONDS = BUFFER_LENGTH_SECONDS_KNOB_MAX + CROSS_FADE_SECONDS * 2;
+static const int BUFFER_SIZE_MAX = (BUFFER_LENGTH_SECONDS * ASSUMED_SAMPLE_RATE) + 2;
+
+static const int BUFFER_TAIL_PADDING = 1;
+
+static const int READ_PATTERN_NEG [][6] = {
+	{1,1,1,1,1,1},
+	{2,1,1,1,1,1},
+	{2,1,1,2,1,1},
+	{2,1,2,1,2,1},
+	{2,2,1,2,2,1},
+	{2,2,2,2,2,1},
+	{2,2,2,2,2,2},
+	{3,2,2,2,2,2},
+	{3,2,2,3,2,2},
+	{3,2,3,2,3,2},
+	{3,3,2,3,3,2},
+	{3,3,3,3,3,2},
+	{3,3,3,3,3,3},
+	{4,3,3,3,3,3},
+	{4,3,3,4,3,3},
+	{4,3,4,3,4,3},
+	{4,4,3,4,4,3},
+	{4,4,4,4,4,3},
+	{4,4,4,4,4,4},
+	{5,4,4,4,4,4},
+	{5,4,4,5,4,4},
+	{5,4,5,4,5,4},
+	{5,5,4,5,5,4},
+	{5,5,5,5,5,4},
+	{5,5,5,5,5,5},
+};
+
+static const int READ_PATTERN_POS [][6] = {
+	{1,2,3,4,5,6},
+	{1,2,3,4,6,5},
+	{1,2,3,5,4,6},
+	{1,2,4,3,5,6},
+	{1,3,2,4,5,6},
+	{1,2,3,5,6,4},
+	{1,2,3,6,4,5},
+	{1,2,3,6,5,4},
+	{1,2,4,3,6,5},
+	{1,2,4,5,3,6},
+	{1,2,5,3,4,6},
+	{1,2,5,4,3,6},
+	{1,3,2,4,6,5},
+	{1,3,2,5,4,6},
+	{1,3,4,2,5,6},
+	{1,4,2,3,5,6},
+	{1,4,3,2,5,6},
+	{1,2,4,5,6,3},
+	{1,2,4,6,3,5},
+	{1,2,4,6,5,3},
+	{1,2,5,3,6,4},
+	{1,2,5,4,6,3},
+	{1,2,6,3,4,5},
+	{1,2,6,3,5,4},
+	{1,2,6,4,3,5},
+	{1,2,6,4,5,3},
+	{1,3,2,5,6,4},
+	{1,3,2,6,4,5},
+	{1,3,2,6,5,4},
+	{1,3,4,2,6,5},
+	{1,3,4,5,2,6},
+	{1,3,5,2,4,6},
+	{1,3,5,4,2,6},
+	{1,4,2,3,6,5},
+	{1,4,2,5,3,6},
+	{1,4,3,2,6,5},
+	{1,4,3,5,2,6},
+	{1,5,2,3,4,6},
+	{1,5,2,4,3,6},
+	{1,5,3,2,4,6},
+	{1,5,3,4,2,6},
+	{1,2,5,6,3,4},
+	{1,2,5,6,4,3},
+	{1,2,6,5,3,4},
+	{1,2,6,5,4,3},
+	{1,3,4,5,6,2},
+	{1,3,4,6,2,5},
+	{1,3,4,6,5,2},
+	{1,3,5,2,6,4},
+	{1,3,5,4,6,2},
+	{1,3,6,2,4,5},
+	{1,3,6,2,5,4},
+	{1,3,6,4,2,5},
+	{1,3,6,4,5,2},
+	{1,4,2,5,6,3},
+	{1,4,2,6,3,5},
+	{1,4,2,6,5,3},
+	{1,4,3,5,6,2},
+	{1,4,3,6,2,5},
+	{1,4,3,6,5,2},
+	{1,4,5,2,3,6},
+	{1,4,5,3,2,6},
+	{1,5,2,3,6,4},
+	{1,5,2,4,6,3},
+	{1,5,3,2,6,4},
+	{1,5,3,4,6,2},
+	{1,5,4,2,3,6},
+	{1,5,4,3,2,6},
+	{1,6,2,3,4,5},
+	{1,6,2,3,5,4},
+	{1,6,2,4,3,5},
+	{1,6,2,4,5,3},
+	{1,6,3,2,4,5},
+	{1,6,3,2,5,4},
+	{1,6,3,4,2,5},
+	{1,6,3,4,5,2},
+	{1,3,5,6,2,4},
+	{1,3,5,6,4,2},
+	{1,3,6,5,2,4},
+	{1,3,6,5,4,2},
+	{1,4,5,2,6,3},
+	{1,4,5,3,6,2},
+	{1,4,6,2,3,5},
+	{1,4,6,2,5,3},
+	{1,4,6,3,2,5},
+	{1,4,6,3,5,2},
+	{1,5,2,6,3,4},
+	{1,5,2,6,4,3},
+	{1,5,3,6,2,4},
+	{1,5,3,6,4,2},
+	{1,5,4,2,6,3},
+	{1,5,4,3,6,2},
+	{1,6,2,5,3,4},
+	{1,6,2,5,4,3},
+	{1,6,3,5,2,4},
+	{1,6,3,5,4,2},
+	{1,6,4,2,3,5},
+	{1,6,4,2,5,3},
+	{1,6,4,3,2,5},
+	{1,6,4,3,5,2},
+	{1,4,5,6,2,3},
+	{1,4,5,6,3,2},
+	{1,4,6,5,2,3},
+	{1,4,6,5,3,2},
+	{1,5,4,6,2,3},
+	{1,5,4,6,3,2},
+	{1,5,6,2,3,4},
+	{1,5,6,2,4,3},
+	{1,5,6,3,2,4},
+	{1,5,6,3,4,2},
+	{1,5,6,4,2,3},
+	{1,5,6,4,3,2},
+	{1,6,4,5,2,3},
+	{1,6,4,5,3,2},
+	{1,6,5,2,3,4},
+	{1,6,5,2,4,3},
+	{1,6,5,3,2,4},
+	{1,6,5,3,4,2},
+	{1,6,5,4,2,3},
+	{1,6,5,4,3,2},
+};
+
+#define PITCH_BUFF_SIZE 1024
+
+struct IceTray : Module {
+	enum ParamId {
+		SPEED_NUM_PARAM,
+		SPEED_NUM_CK_PARAM,
+		SPEED_DENOM_PARAM,		
+		SPEED_DENOM_CK_PARAM,
+		FROST_PARAM,
+		FROST_CK_PARAM,
+		RECORD_LENGTH_PARAM,
+		PLAYBACK_MODE_PARAM,		
+		REPEATS_PARAM,
+		PATERN_PARAM,		
+		FEEDBACK_PARAM,		
+		FEEDBACK_CK_PARAM,	
+		ENUMS(CUBE_SWITCH_PARAM, BUFFER_COUNT),
+		PARAMS_LEN,		
+	};
+	enum InputId {
+		AUDIO_INPUT,
+		CLOCK_RECORD_INPUT,
+		CLOCK_PLAYBACK_INPUT,
+		SPEED_NUM_CV_INPUT,
+		SPEED_DENOM_CV_INPUT,
+		REPEATS_CV_INPUT,
+		PATERN_CV_INPUT,		
+		FROST_CV_INPUT,		
+		FEEDBACK_CV_INPUT,
+		INPUTS_LEN
+	};
+	enum OutputId {
+		AUDIO_OUTPUT,
+		OUTPUTS_LEN
+	};
+	enum LightId {
+		ENUMS(CUBE_LIGHT, BUFFER_COUNT),
+		ENUMS(RP_LIGHT, BUFFER_COUNT * 3),
+		LIGHTS_LEN
+	};
+
+	enum LockLevel {
+		NONE,
+		RECORD,
+		ALL,
+	};
+
+	float buffers [BUFFER_COUNT][BUFFER_SIZE_MAX];
+	LockLevel bufferLockLevel [BUFFER_COUNT] = {NONE,NONE,NONE,ALL,ALL,ALL};
+	int loopSize [BUFFER_COUNT];
+
+	float playbackCrossFadeBuffer [CROSS_FADE_AMT];
+	int playbackCrossFadeBufferIndex = 0;
+	float recordCrossFadePreBuffer [CROSS_FADE_AMT];
+	float recordCrossFadePreBufferIndex = 0;
+
+	float recordIndex = 0;
+	int recordBuffer = 0;
+	int playbackIndex = 0;
+	int playbackBuffer = -1;
+
+	bool playbackClockHigh = false;
+	bool recordClockHigh = false;
+	bool firstRecordClock = true;
+
+	float feedbackValue = 0;
+	int playbackRepeatCount = 0;
+
+	int nextReadPatternIndex = -1;
+
+	float prevInput = 0;
+	int fadeInStart = 0;
+
+	dsp::TRCFilter<float> lowpassFilter;
+	dsp::TRCFilter<float> highpassFilter;
+
+	dsp::DoubleRingBuffer<float, PITCH_BUFF_SIZE> in_Buffer;
+	dsp::DoubleRingBuffer<float, PITCH_BUFF_SIZE> ps_Buffer;
+	PitchShifter *pShifter;
+	bool first = true;
+
+	bool cubeButtonDown [BUFFER_COUNT];
+	bool cubeButtonDir [BUFFER_COUNT];
+
+	int playbackBufferLockout = 0;
+
+	IceTray() {
+		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
+		
+		configParam(SPEED_NUM_PARAM, 1.f, 11.f, 6.f, "Record Speed Numerator");
+		configParam(SPEED_NUM_CK_PARAM, -1.f, 1.f, 0.f, "Numerator CV Scalar", "%", 0.f, 100.f, 0.f);
+		configParam(SPEED_DENOM_PARAM, 1.f, 11.f, 6.f, "Record Speed Denominator");		
+		configParam(SPEED_DENOM_CK_PARAM, -1.f, 1.f, 0.f, "Denominator CV Sclar", "%", 0.f, 100.f, 0.f);
+		configParam(FROST_PARAM, 0.f, 1.f, 0.5f, "Frozen Percent", "%", 0.f, 100.f, 0.f);
+		configParam(FROST_CK_PARAM, -1.f, 1.f, 0.f, "Frozen Percent CV Scalar", "%", 0.f, 100.f, 0.f);
+		configParam(RECORD_LENGTH_PARAM, 0.1f, BUFFER_LENGTH_SECONDS_KNOB_MAX, 1.f, "Record Length", " Seconds");
+		configSwitch(PLAYBACK_MODE_PARAM, 0.f, 1.f, 1.f, "Playback Clock Rests Position", std::vector<std::string>{"Off","On"});
+		configParam(REPEATS_PARAM, 1.f, 10.f, 1.f, "Playback Repeat Count");
+		configParam(PATERN_PARAM, -1.f, 1.f, 0.f, "Playback Pattern");
+		configParam(FEEDBACK_PARAM, 0.f, 1.f, 0.0f, "Feedback Percent", "%", 0.f, 100.f, 0.f);
+		configParam(FEEDBACK_CK_PARAM, -1.f, 1.f, 0.f, "Frozen Percent CV Scalar", "%", 0.f, 100.f, 0.f);
+		for(int i = 0; i < BUFFER_COUNT; i++){
+			std::string cs = std::to_string(i+1);
+			configButton(CUBE_SWITCH_PARAM + i, "Cube " + cs);
+		}
+
+		configInput(AUDIO_INPUT, "Audio");
+		configInput(CLOCK_RECORD_INPUT, "Record Clock");
+		configInput(CLOCK_PLAYBACK_INPUT, "Playback Clock");
+		configInput(SPEED_NUM_CV_INPUT, "Numerator CV");
+		configInput(SPEED_DENOM_CV_INPUT, "Denominator CV");
+		configInput(REPEATS_CV_INPUT, "Playback Repeat Count CV");
+		configInput(PATERN_CV_INPUT, "Playback Patern CV");		
+		configInput(FROST_CV_INPUT, "Frozen Track Percent CV");	
+		configInput(FEEDBACK_CV_INPUT, "Feedback CV");
+		configOutput(AUDIO_OUTPUT, "Audio");	
+
+		configBypass(AUDIO_INPUT, AUDIO_OUTPUT);
+
+
+		pShifter = new PitchShifter();
+
+		clearCubes();
+		first = true;
+		in_Buffer.clear();
+		ps_Buffer.clear();
+	}
+
+	void onAdd(const AddEvent& e) override {
+		updateCubeLights();
+		updateRecordAndPlaybackLights();
+	}
+
+	void clearCubes(){
+		memset(buffers, 0, sizeof buffers);
+		bufferLockLevel[0] = NONE;
+		bufferLockLevel[1] = NONE;
+		bufferLockLevel[2] = NONE;
+		bufferLockLevel[3] = ALL;
+		bufferLockLevel[4] = ALL;
+		bufferLockLevel[5] = ALL;
+		memset(loopSize, 0, sizeof loopSize);
+		memset(playbackCrossFadeBuffer, 0, sizeof playbackCrossFadeBuffer);
+		memset(recordCrossFadePreBuffer, 0, sizeof recordCrossFadePreBuffer);
+
+		recordIndex = 0;
+		recordBuffer = 0;
+		playbackIndex = 0;
+		playbackBuffer = -1;
+		playbackCrossFadeBufferIndex = 0;
+		recordCrossFadePreBufferIndex = 0;
+
+		playbackClockHigh = false;
+		recordClockHigh = false;
+		firstRecordClock = true;
+
+		feedbackValue = 0;
+		playbackRepeatCount = 0;
+
+		nextReadPatternIndex = 0;
+
+		prevInput = 0;
+		fadeInStart = 0;
+
+		updateCubeLights();
+		updateRecordAndPlaybackLights();
+	}
+
+	void onReset(const ResetEvent& e) override {
+		Module::onReset(e);
+
+		clearCubes();
+		first = true;
+		in_Buffer.clear();
+		ps_Buffer.clear();
+	}
+
+	void process(const ProcessArgs& args) override {
+
+		if(playbackBufferLockout > 0){
+			playbackBufferLockout--;
+			if(playbackBufferLockout == 0) playback_jumpToNextTrack(false);
+		}
+
+		lowpassFilter.setCutoff(20000 / args.sampleRate);
+		highpassFilter.setCutoff(20 / args.sampleRate);
+
+		for(int bi = 0; bi < BUFFER_COUNT; bi++){
+			bool button = params[CUBE_SWITCH_PARAM + bi].getValue() > 0;
+			if(!cubeButtonDown[bi] && button){
+				cubeButtonDown[bi] = true;
+				switch(bufferLockLevel[bi]){
+					case RECORD:
+						bufferLockLevel[bi] = cubeButtonDir[bi] ? ALL : NONE;
+						break;
+					case ALL:
+						bufferLockLevel[bi] = RECORD;
+						cubeButtonDir[bi] = false;
+						break;
+					case NONE:
+						bufferLockLevel[bi] = RECORD;
+						cubeButtonDir[bi] = true;
+						break;
+				}
+				if(recordBuffer == -1 && bufferLockLevel[bi] == NONE) record_jumpToNextTrack();
+				else if(bi == recordBuffer && bufferLockLevel[bi] != ALL) record_jumpToNextTrack(); 
+
+				if(playbackBuffer == -1 && bufferLockLevel[bi] != NONE) playback_jumpToNextTrack(false);
+				else if(bi == playbackBuffer && bufferLockLevel[bi] == NONE) playback_jumpToNextTrack(false);
+				
+				updateCubeLights();
+			}else if(cubeButtonDown[bi] && !button){
+				cubeButtonDown[bi] = false;
+			}
+		}
+
+		float bufferLengthSeconds = inputs[CLOCK_RECORD_INPUT].isConnected() ? BUFFER_LENGTH_SECONDS_KNOB_MAX : params[RECORD_LENGTH_PARAM].getValue();
+		int bufferLength = round(ASSUMED_SAMPLE_RATE * bufferLengthSeconds);
+
+		float recordClock = inputs[CLOCK_RECORD_INPUT].getVoltage();
+		if (!recordClockHigh && recordClock > 2.0f) {
+			recordClockHigh = true;
+			if(firstRecordClock){
+				firstRecordClock = false;
+			}else{
+				record_jumpToNextTrack();
+			}
+		}else if(recordClockHigh && recordClock < 0.1f){
+			recordClockHigh = false;
+		}
+
+		float playbackClock = inputs[CLOCK_PLAYBACK_INPUT].getVoltage();
+		if (!playbackClockHigh && playbackClock > 2.0f) {
+			playbackClockHigh = true;
+			playback_jumpToNextTrack(false);
+		}else if(playbackClockHigh && playbackClock < 0.1f){
+			playbackClockHigh = false;
+		}
+
+		float speedNumerator = round(params[SPEED_NUM_PARAM].getValue() + params[SPEED_NUM_CK_PARAM].getValue() * inputs[SPEED_NUM_CV_INPUT].getVoltage());
+		float speedDenomonator = round(params[SPEED_DENOM_PARAM].getValue() + params[SPEED_DENOM_CK_PARAM].getValue() * inputs[SPEED_NUM_CV_INPUT].getVoltage());
+		if(speedNumerator < 1) speedNumerator = 1;
+		if(speedDenomonator < 1) speedDenomonator = 1;
+		float speed = clamp(speedNumerator / speedDenomonator,0.001f,1000.f);
+		float speedInvert = 1/speed;
+
+		feedbackValue *= params[FEEDBACK_PARAM].getValue() + params[FEEDBACK_CK_PARAM].getValue() * inputs[FEEDBACK_CV_INPUT].getVoltage() / 10.f;
+
+		float rawInput = inputs[AUDIO_INPUT].getVoltageSum();
+
+		if (first) {
+			pShifter->init(PITCH_BUFF_SIZE, 8, args.sampleRate);
+			first = false;
+		}
+		in_Buffer.push(rawInput / 10.0f);
+
+		if (in_Buffer.full()) {
+			pShifter->process(speedInvert, in_Buffer.startData(), ps_Buffer.endData());
+			ps_Buffer.endIncr(PITCH_BUFF_SIZE);
+			in_Buffer.clear();
+		}
+
+		float pitchShiftedInput = 0;
+		if (ps_Buffer.size() > 0) {
+			pitchShiftedInput = *ps_Buffer.startData() * 6.6f;
+			ps_Buffer.startIncr(1);
+		}
+
+		float input = pitchShiftedInput + feedbackValue;
+
+		int steps = floor(speedInvert);
+		//Pre Record Buffer Record
+		{
+			int low = floor(recordCrossFadePreBufferIndex);
+			recordCrossFadePreBufferIndex += speedInvert;
+			if(recordCrossFadePreBufferIndex >= CROSS_FADE_AMT) recordCrossFadePreBufferIndex -= CROSS_FADE_AMT;
+
+			for(int d = 0; d <= steps; d++){
+
+				int ri = low + d;
+				float percent = d / speedInvert;
+				float writeVal = prevInput * (1-percent) + input * percent;			
+
+				recordCrossFadePreBuffer[ri] = writeVal;
+				ri++;
+				if(ri >= CROSS_FADE_AMT){
+					low -= CROSS_FADE_AMT;
+				}
+			}			
+		}
+
+		//Main Buffer Record
+		if(recordBuffer >= 0){
+			int low = floor(recordIndex);			
+			recordIndex += speedInvert; //Do this before the loop so if record_jumpToNextTrack gets called, it overrides this value
+			for(int d = 0; d <= steps; d++){
+
+				int ri = low + d;
+				float percent = d / speedInvert;
+				float writeVal = prevInput * (1-percent) + input * percent;			
+
+				buffers[recordBuffer][ri] = writeVal;
+				ri++;
+				if(ri >= bufferLength){
+					record_jumpToNextTrack();
+					break;
+					//low = floor(recordIndex) - d;
+				}
+			}			
+		}
+
+		prevInput = input;
+
+		float output = 0;
+		if(playbackBuffer >= 0){
+			int ls = loopSize[playbackBuffer];		
+			int pbi = playbackIndex;
+
+			while(pbi > ls) pbi -= ls;
+			output = buffers[playbackBuffer][pbi];
+
+			//Note toStart is intentinally calcuated before wrapping
+			int toStart = playbackIndex - fadeInStart;			
+			if(toStart < CROSS_FADE_AMT){
+				float scalar = ((float)toStart/CROSS_FADE_AMT);
+				output *= clamp(scalar,0.f,1.0f);
+			}
+
+			int toEnd = ls - pbi;
+			if(toEnd < CROSS_FADE_AMT){
+				float scalar = ((float)toEnd/CROSS_FADE_AMT);
+				output *= clamp(scalar,0.f,1.0f);
+			}
+
+			playbackIndex++;
+
+			if(params[PLAYBACK_MODE_PARAM].getValue() == 1){
+				if(playbackIndex >= ls){
+					playback_jumpToNextTrack(false);
+				}
+			}
+			if(playbackIndex >= bufferLength){
+				playback_jumpToNextTrack(true);
+			}
+		}
+
+		if(playbackCrossFadeBufferIndex < CROSS_FADE_AMT){
+			float crossOut = playbackCrossFadeBuffer[playbackCrossFadeBufferIndex];
+			playbackCrossFadeBufferIndex++;
+			float scalar = 1.f-((float)playbackCrossFadeBufferIndex/CROSS_FADE_AMT);
+			crossOut *= clamp(scalar,0.f,1.0f);
+			output += crossOut;
+		}
+
+		lowpassFilter.process(output);
+		output = lowpassFilter.lowpass();
+		highpassFilter.process(output);
+		output = highpassFilter.highpass();
+
+		outputs[AUDIO_OUTPUT].setVoltage(output);
+		feedbackValue = output;
+	}
+
+	void updateCubeLights(){
+		for(int i = 0; i < 6; i++){
+			float brightness;
+			switch(bufferLockLevel[i]){
+				case NONE:
+					brightness = 1.f;
+					break;
+				case RECORD:
+					brightness = 0.25f;
+					break;
+				case ALL:
+				default:
+					brightness = 0.f;
+					break;
+			}
+			lights[CUBE_LIGHT + i].setBrightness(brightness);
+		}
+	}
+
+	void updateRecordAndPlaybackLights(){
+		for(int i = 0; i < BUFFER_COUNT; i++){
+			lights[RP_LIGHT + i * 3 + 0].setBrightness(i == recordBuffer ? 1.f : 0);
+			lights[RP_LIGHT + i * 3 + 1].setBrightness(i == playbackBuffer ? 1.f : 0);
+		}
+	}
+
+	void record_jumpToNextTrack() {
+		if(recordBuffer != -1){
+			loopSize[recordBuffer] = clamp((int)recordIndex - CROSS_FADE_AMT, 0, BUFFER_SIZE_MAX-CROSS_FADE_AMT);
+
+			//If intial recording, copy it over to the buffer 3 down
+			if(recordBuffer < 3){
+				int bi = recordBuffer + 3;
+				int ls = loopSize[recordBuffer];
+				loopSize[bi] = ls;
+				for(int i = 0; i < ls; i++){
+					buffers[bi][i] = buffers[recordBuffer][i];
+				}
+			}
+		}
+
+		int freeBuffer = record_nextFreeBuffer();
+		recordBuffer = freeBuffer;
+		recordIndex = recordCrossFadePreBufferIndex - floor(recordCrossFadePreBufferIndex) + CROSS_FADE_AMT;
+
+		//Copy over cross fade buffer into start of new buffer
+		if(recordBuffer != -1){
+			for(int ci = 0; ci < CROSS_FADE_AMT; ci++){
+				int i = 1 + ci + floor(recordCrossFadePreBufferIndex);
+				if(i >= CROSS_FADE_AMT) i -= CROSS_FADE_AMT;
+				buffers[recordBuffer][ci] = recordCrossFadePreBuffer[i];
+			}
+		}
+
+		if(playbackBuffer == -1){
+			playback_jumpToNextTrack(true);
+		}
+		updateBufferLocks();
+		updateRecordAndPlaybackLights();
+	}
+
+	void playback_jumpToNextTrack(bool forceResetPBI) {
+
+		bool runover = params[PLAYBACK_MODE_PARAM].getValue() == 0;
+
+		if(playbackBuffer != -1){
+			//Queue of the remainder of this buffer into the cross fade
+			int ls = std::min(loopSize[playbackBuffer], BUFFER_SIZE_MAX);
+			for(int ci = 0; ci < CROSS_FADE_AMT; ci++){
+				int i = ci + playbackIndex;
+				if(runover){
+					while(i > ls) i -= ls;
+					playbackCrossFadeBuffer[ci] = buffers[playbackBuffer][i];
+				}else{
+					if(i < ls){
+						playbackCrossFadeBuffer[ci] = buffers[playbackBuffer][i];
+					}else{
+						playbackCrossFadeBuffer[ci] = 0;
+					}
+				}
+			}
+			playbackCrossFadeBufferIndex = 0;
+		}
+
+		if(forceResetPBI || !runover){
+			playbackIndex = 0;
+			fadeInStart = 0;
+		}else{
+			fadeInStart = playbackIndex;
+		}
+
+		if(playbackBuffer != -1){
+			playbackRepeatCount ++;	
+			
+			int playbackRepeatMax = std::round(params[REPEATS_PARAM].getValue() * std::abs(inputs[REPEATS_CV_INPUT].getNormalVoltage(1.f)));
+			if(playbackRepeatMax < 1) playbackRepeatMax = 1;
+
+			if(playbackRepeatCount < playbackRepeatMax) return;
+			playbackRepeatCount = 0;
+		}		
+
+		int freeBuffer = playback_nextFreeBuffer();
+		playbackBuffer = freeBuffer;
+		if(recordBuffer == -1){
+			record_jumpToNextTrack();
+		}
+		updateBufferLocks();
+		updateRecordAndPlaybackLights();
+	}
+
+	int record_nextFreeBuffer(){
+		for(int i = 1; i <= BUFFER_COUNT; i++){
+			int test = recordBuffer + i;
+			while(test < 0) test += BUFFER_COUNT;
+			while(test >= BUFFER_COUNT) test -= BUFFER_COUNT;
+			if(isBufferFree(test,true)){
+				return test;
+			}
+		}
+		return -1;
+	}
+
+	int playback_nextFreeBuffer(){
+		// if(playbackBuffer != -1){
+		// 	playbackBufferLockout = 40000;
+		// 	return -1;
+		// }
+
+		if(playbackBufferLockout > 0) return -1;
+
+		float pattern = params[PATERN_PARAM].getValue() * inputs[PATERN_CV_INPUT].getNormalVoltage(10.f)/10.f;
+
+		if(pattern < 0){
+			int patternIndex = std::round(-pattern*24);
+			int maxJump = READ_PATTERN_NEG[patternIndex][nextReadPatternIndex];
+			int firstJump = floor(rack::random::uniform() * rack::random::uniform() * maxJump + 1);
+			for(int i = firstJump; i >= 1; i--){
+				int test = playbackBuffer + i;
+				while(test < 0) test += BUFFER_COUNT;
+				while(test >= BUFFER_COUNT) test -= BUFFER_COUNT;
+				if(isBufferFree(test,false)){
+					return test;
+				}
+			}
+			for(int i = firstJump+1; i < BUFFER_COUNT; i++){
+				int test = playbackBuffer + i;
+				while(test < 0) test += BUFFER_COUNT;
+				while(test >= BUFFER_COUNT) test -= BUFFER_COUNT;
+				if(isBufferFree(test,false)){
+					return test;
+				}
+			}
+		}else{
+			int patternIndex = std::round(pattern*119);
+			for(int i = 1; i < BUFFER_COUNT; i++){
+				nextReadPatternIndex++;
+				if(nextReadPatternIndex >= BUFFER_COUNT) nextReadPatternIndex = 0;
+				int test = READ_PATTERN_POS[patternIndex][nextReadPatternIndex];
+
+				while(test < 0) test += BUFFER_COUNT;
+				while(test >= BUFFER_COUNT) test -= BUFFER_COUNT;
+				if(isBufferFree(test,false)){
+					return test;
+				}
+			}
+		}
+		return -1;
+	}
+
+	bool isBufferFree(int test, bool isRecord){
+		if(test == playbackBuffer) return false;
+		if(test == recordBuffer) return false;
+		if(bufferLockLevel[test] == ALL) return false;
+		if(bufferLockLevel[test] == RECORD && isRecord) return false;
+		if(loopSize[test] == 0 && !isRecord) return false;
+		return true;
+	}
+
+	void updateBufferLocks(){
+		int recordCnt = 0;
+		int frozenCnt = 0;
+		for(int bi = 0; bi < BUFFER_COUNT; bi++){
+			if(bufferLockLevel[bi] == NONE) recordCnt++;
+			if(bufferLockLevel[bi] == ALL) frozenCnt++;
+		}
+		float lockChangeChance = 1.f - (params[FROST_PARAM].getValue() + params[FROST_CK_PARAM].getValue() * inputs[FROST_CV_INPUT].getVoltage()/10.f);
+
+		if(rack::random::uniform() < lockChangeChance){
+			int index = floor(rack::random::uniform() * BUFFER_COUNT);
+			if(index == recordBuffer) return;
+			if(index == playbackBuffer) return;
+			int level = bufferLockLevel[index];
+			if(recordCnt < 2) level = level - 1;
+			else if(frozenCnt < 1) level = level + 1;
+			else if(level == RECORD){
+				if(rack::random::uniform() < 0.3f) level = (rack::random::uniform() < 0.5f) ? ALL : NONE;
+			}else{
+				if(rack::random::uniform() < 0.5f) level = RECORD;
+			}
+			level = clamp(level,NONE,ALL);
+			bufferLockLevel[index] = (LockLevel)level;
+			updateCubeLights();
+		}
+		
+	}
+};
+
+
+struct IceTrayWidget : ModuleWidget {
+	IceTrayWidget(IceTray* module) {
+		setModule(module);
+		setPanel(createPanel(asset::plugin(pluginInstance, "res/IceTray.svg")));
+
+		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(24.892, 48.457)), module, IceTray::SPEED_NUM_PARAM));
+		addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(24.759, 84.597)), module, IceTray::SPEED_DENOM_PARAM));
+		addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(95.815, 70.543)), module, IceTray::FROST_PARAM));
+
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(38.803, 23.035)), module, IceTray::RECORD_LENGTH_PARAM));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(46.972, 111.165)), module, IceTray::FEEDBACK_PARAM));		
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(109.893, 37.896)), module, IceTray::PATERN_PARAM));
+		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(94.19, 38.163)), module, IceTray::REPEATS_PARAM));
+
+		addParam(createParamCentered<CKSS>(mm2px(Vec(81.562, 23.129)), module, IceTray::PLAYBACK_MODE_PARAM));
+
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.58, 29.611)), module, IceTray::SPEED_NUM_CK_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(98.726, 86.827)), module, IceTray::FROST_CK_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(20.58, 100.34)), module, IceTray::SPEED_DENOM_CK_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(61.806, 110.63)), module, IceTray::FEEDBACK_CK_PARAM));
+
+		addParam(createParamCentered<VCVButton>(mm2px(Vec(51.936, 42.374)), module, IceTray::CUBE_SWITCH_PARAM + 0));
+		addParam(createParamCentered<VCVButton>(mm2px(Vec(51.936, 67.321)), module, IceTray::CUBE_SWITCH_PARAM + 1));
+		addParam(createParamCentered<VCVButton>(mm2px(Vec(51.936, 92.267)), module, IceTray::CUBE_SWITCH_PARAM + 2));
+		addParam(createParamCentered<VCVButton>(mm2px(Vec(74.756, 42.422)), module, IceTray::CUBE_SWITCH_PARAM + 3));
+		addParam(createParamCentered<VCVButton>(mm2px(Vec(74.756, 67.321)), module, IceTray::CUBE_SWITCH_PARAM + 4));
+		addParam(createParamCentered<VCVButton>(mm2px(Vec(74.851, 92.22)), module, IceTray::CUBE_SWITCH_PARAM + 5));
+
+		
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.287, 65.592)), module, IceTray::AUDIO_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(49.942, 22.883)), module, IceTray::CLOCK_RECORD_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(71.911, 22.93)), module, IceTray::CLOCK_PLAYBACK_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(9.61, 24.487)), module, IceTray::SPEED_NUM_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(94.106, 49.952)), module, IceTray::REPEATS_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(109.675, 50.152)), module, IceTray::PATERN_CV_INPUT));		
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(110.877, 91.044)), module, IceTray::FROST_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(9.515, 103.673)), module, IceTray::SPEED_DENOM_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(76.066, 110.288)), module, IceTray::FEEDBACK_CV_INPUT));
+
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(102.122, 109.986)), module, IceTray::AUDIO_OUTPUT));
+
+		addChild(createLightCentered<LargeLight<BlueLight>>(mm2px(Vec(51.936, 42.374)), module, IceTray::CUBE_LIGHT + 0));
+		addChild(createLightCentered<LargeLight<BlueLight>>(mm2px(Vec(51.936, 67.321)), module, IceTray::CUBE_LIGHT + 1));
+		addChild(createLightCentered<LargeLight<BlueLight>>(mm2px(Vec(51.936, 92.267)), module, IceTray::CUBE_LIGHT + 2));
+		addChild(createLightCentered<LargeLight<BlueLight>>(mm2px(Vec(74.756, 42.422)), module, IceTray::CUBE_LIGHT + 3));
+		addChild(createLightCentered<LargeLight<BlueLight>>(mm2px(Vec(74.756, 67.321)), module, IceTray::CUBE_LIGHT + 4));		
+		addChild(createLightCentered<LargeLight<BlueLight>>(mm2px(Vec(74.851, 92.22)), module, IceTray::CUBE_LIGHT + 5));
+
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(mm2px(Vec(48.61, 47.288)), module, IceTray::RP_LIGHT + 0 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(mm2px(Vec(48.543, 72.144)), module, IceTray::RP_LIGHT + 1 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(mm2px(Vec(48.543, 97.067)), module, IceTray::RP_LIGHT + 2 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(mm2px(Vec(71.461, 47.288)), module, IceTray::RP_LIGHT + 3 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(mm2px(Vec(71.394, 72.144)), module, IceTray::RP_LIGHT + 4 * 3));
+		addChild(createLightCentered<SmallLight<RedGreenBlueLight>>(mm2px(Vec(71.461, 97.0)), module, IceTray::RP_LIGHT + 5 * 3));
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		IceTray* module = dynamic_cast<IceTray*>(this->module);
+
+		menu->addChild(new MenuEntry);
+		menu->addChild(createMenuLabel("Ice Tray"));
+
+		struct ClearCubes : MenuItem {
+			IceTray* module;
+			void onAction(const event::Action& e) override {
+				module->clearCubes();
+			}
+		};
+
+		{
+			ClearCubes* menuItem = createMenuItem<ClearCubes>("Clear Cubes");
+			menuItem->module = module;
+			menu->addChild(menuItem);
+		}
+	}
+};
+
+
+Model* modelIceTray = createModel<IceTray, IceTrayWidget>("IceTray");
