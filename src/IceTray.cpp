@@ -7,6 +7,9 @@ License: GNU GPL-3.0
 #include "plugin.hpp"
 #include "dsp/ringbuffer.hpp"
 #include "filters/pitchshifter.h"
+#include "util.hpp"
+#include <iostream>
+#include <fstream>
 
 static const int BUFFER_COUNT = 6;
 
@@ -175,6 +178,20 @@ static const int READ_PATTERN_POS [][6] = {
 
 #define PITCH_BUFF_SIZE 1024
 
+#define MAX_CHANNELS 2
+
+void writeDoubleBuffer(std::ostream * out, dsp::DoubleRingBuffer<float,PITCH_BUFF_SIZE> * buffer){
+	out->write( (char *)& buffer->start, sizeof(float));
+	out->write( (char *)& buffer->end, sizeof(float));
+	out->write( (char *)& buffer->data, PITCH_BUFF_SIZE * 2 * sizeof(float));
+}
+
+void readDoubleBuffer(std::fstream * in, dsp::DoubleRingBuffer<float,PITCH_BUFF_SIZE> * buffer){
+	in->read( (char *)& buffer->start, sizeof(float));
+	in->read( (char *)& buffer->end, sizeof(float));
+	in->read( (char *)& buffer->data, PITCH_BUFF_SIZE * 2 * sizeof(float));
+}
+
 struct IceTray : Module {
 	enum ParamId {
 		SPEED_NUM_PARAM,
@@ -193,7 +210,7 @@ struct IceTray : Module {
 		PARAMS_LEN,		
 	};
 	enum InputId {
-		AUDIO_INPUT,
+		LEFT_INPUT,
 		CLOCK_RECORD_INPUT,
 		CLOCK_PLAYBACK_INPUT,
 		SPEED_NUM_CV_INPUT,
@@ -202,10 +219,12 @@ struct IceTray : Module {
 		PATERN_CV_INPUT,		
 		FROST_CV_INPUT,		
 		FEEDBACK_CV_INPUT,
+		RIGHT_INPUT,
 		INPUTS_LEN
 	};
 	enum OutputId {
-		AUDIO_OUTPUT,
+		LEFT_OUTPUT,
+		RIGHT_OUTPUT,
 		OUTPUTS_LEN
 	};
 	enum LightId {
@@ -220,13 +239,13 @@ struct IceTray : Module {
 		ALL,
 	};
 
-	float buffers [BUFFER_COUNT][BUFFER_SIZE_MAX];
+	float buffers [BUFFER_COUNT][BUFFER_SIZE_MAX][MAX_CHANNELS];
 	LockLevel bufferLockLevel [BUFFER_COUNT] = {NONE,NONE,NONE,ALL,ALL,ALL};
 	int loopSize [BUFFER_COUNT];
 
-	float playbackCrossFadeBuffer [CROSS_FADE_AMT];
+	float playbackCrossFadeBuffer [CROSS_FADE_AMT][MAX_CHANNELS];
 	int playbackCrossFadeBufferIndex = 0;
-	float recordCrossFadePreBuffer [CROSS_FADE_AMT];
+	float recordCrossFadePreBuffer [CROSS_FADE_AMT][MAX_CHANNELS];
 	float recordCrossFadePreBufferIndex = 0;
 
 	float recordIndex = 0;
@@ -238,26 +257,26 @@ struct IceTray : Module {
 	bool recordClockHigh = false;
 	bool firstRecordClock = true;
 
-	float feedbackValue = 0;
+	float feedbackValue [MAX_CHANNELS] = {0,0};
 	int playbackRepeatCount = 0;
 
 	int nextReadPatternIndex = -1;
 
-	float prevInput = 0;
+	float prevInput [MAX_CHANNELS] = {0,0};
 	int fadeInStart = 0;
 
-	dsp::TRCFilter<float> lowpassFilter;
-	dsp::TRCFilter<float> highpassFilter;
+	dsp::TRCFilter<float> lowpassFilter [MAX_CHANNELS];
+	dsp::TRCFilter<float> highpassFilter [MAX_CHANNELS];
 
-	dsp::DoubleRingBuffer<float, PITCH_BUFF_SIZE> in_Buffer;
-	dsp::DoubleRingBuffer<float, PITCH_BUFF_SIZE> ps_Buffer;
-	PitchShifter *pShifter;
+	dsp::DoubleRingBuffer<float, PITCH_BUFF_SIZE> in_Buffer [MAX_CHANNELS];
+	dsp::DoubleRingBuffer<float, PITCH_BUFF_SIZE> ps_Buffer [MAX_CHANNELS];
+	PitchShifter *pShifter [MAX_CHANNELS];
 	bool first = true;
 
 	bool cubeButtonDown [BUFFER_COUNT];
 	bool cubeButtonDir [BUFFER_COUNT];
 
-	int playbackBufferLockout = 0;
+	bool pitchCorrectionOn = true;
 
 	IceTray() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -279,7 +298,8 @@ struct IceTray : Module {
 			configButton(CUBE_SWITCH_PARAM + i, "Cube " + cs);
 		}
 
-		configInput(AUDIO_INPUT, "Audio");
+		configInput(LEFT_INPUT, "Left Audio Input");
+		configInput(RIGHT_INPUT, "Right Audio Input");
 		configInput(CLOCK_RECORD_INPUT, "Record Clock");
 		configInput(CLOCK_PLAYBACK_INPUT, "Playback Clock");
 		configInput(SPEED_NUM_CV_INPUT, "Numerator CV");
@@ -288,22 +308,22 @@ struct IceTray : Module {
 		configInput(PATERN_CV_INPUT, "Playback Patern CV");		
 		configInput(FROST_CV_INPUT, "Frozen Track Percent CV");	
 		configInput(FEEDBACK_CV_INPUT, "Feedback CV");
-		configOutput(AUDIO_OUTPUT, "Audio");	
+		configOutput(LEFT_OUTPUT, "Left Audio Output");
+		configOutput(RIGHT_OUTPUT, "Right Audio Output");
 
-		configBypass(AUDIO_INPUT, AUDIO_OUTPUT);
+		configBypass(LEFT_INPUT, LEFT_OUTPUT);
+		configBypass(RIGHT_INPUT, RIGHT_OUTPUT);
 
 
-		pShifter = new PitchShifter();
+		pShifter[0] = new PitchShifter();
+		pShifter[1] = new PitchShifter();
 
 		clearCubes();
 		first = true;
-		in_Buffer.clear();
-		ps_Buffer.clear();
-	}
-
-	void onAdd(const AddEvent& e) override {
-		updateCubeLights();
-		updateRecordAndPlaybackLights();
+		in_Buffer[0].clear();
+		in_Buffer[1].clear();
+		ps_Buffer[0].clear();
+		ps_Buffer[1].clear();
 	}
 
 	void clearCubes(){
@@ -329,12 +349,14 @@ struct IceTray : Module {
 		recordClockHigh = false;
 		firstRecordClock = true;
 
-		feedbackValue = 0;
+		feedbackValue[0] = 0;
+		feedbackValue[1] = 0;
 		playbackRepeatCount = 0;
 
 		nextReadPatternIndex = 0;
 
-		prevInput = 0;
+		prevInput[0] = 0;
+		prevInput[1] = 0;
 		fadeInStart = 0;
 
 		updateCubeLights();
@@ -346,19 +368,134 @@ struct IceTray : Module {
 
 		clearCubes();
 		first = true;
-		in_Buffer.clear();
-		ps_Buffer.clear();
+		in_Buffer[0].clear();
+		in_Buffer[1].clear();
+		ps_Buffer[0].clear();
+		ps_Buffer[1].clear();
+
+		pitchCorrectionOn = true;
+
+		lowpassFilter[0].reset();
+		lowpassFilter[1].reset();
+		highpassFilter[0].reset();
+		highpassFilter[1].reset();
+	}
+
+	void onAdd(const AddEvent& e) override {
+		std::string path = system::join(createPatchStorageDirectory(), "buffers.dat");
+		DEBUG("Reading data file '%s' ",path.c_str());
+		// Read file...
+		std::fstream dataFile(path, ios::binary | ios::in);
+		if (dataFile.is_open())
+		{
+			DEBUG("Data file is open");
+	    	for(int ii = 0; ii < 1000; ii++) DEBUG("Loading Buffer Peak %f",buffers[0][ii][0]);
+			dataFile.read( (char *)& playbackCrossFadeBuffer[0][0], CROSS_FADE_AMT * MAX_CHANNELS * sizeof(float) );
+			dataFile.read( (char *)& recordCrossFadePreBuffer[0][0], CROSS_FADE_AMT * MAX_CHANNELS * sizeof(float) );
+			readDoubleBuffer(& dataFile, & in_Buffer[0]);
+			readDoubleBuffer(& dataFile, & in_Buffer[1]);
+			readDoubleBuffer(& dataFile, & ps_Buffer[0]);
+			readDoubleBuffer(& dataFile, & ps_Buffer[1]);
+	    	dataFile.close();
+	  	}
+	  	else
+	  	{
+	  		DEBUG("Unable to open data file");
+	  	}
+
+		updateCubeLights();
+		updateRecordAndPlaybackLights();
+	}
+
+	void onSave(const SaveEvent& e) override {
+		std::string path = system::join(createPatchStorageDirectory(), "buffers.dat");
+		DEBUG("Saving data file '%s' ",path.c_str());
+		// Write file...
+		std::fstream dataFile(path, ios::binary | ios::out);
+		dataFile.write( (char *)& buffers[0][0][0], BUFFER_COUNT * BUFFER_SIZE_MAX * MAX_CHANNELS * sizeof(float) );
+		dataFile.write( (char *)& playbackCrossFadeBuffer[0][0], CROSS_FADE_AMT * MAX_CHANNELS * sizeof(float) );
+		dataFile.write( (char *)& recordCrossFadePreBuffer[0][0], CROSS_FADE_AMT * MAX_CHANNELS * sizeof(float) );
+		writeDoubleBuffer(& dataFile, & in_Buffer[0]);
+		writeDoubleBuffer(& dataFile, & in_Buffer[1]);
+		writeDoubleBuffer(& dataFile, & ps_Buffer[0]);
+		writeDoubleBuffer(& dataFile, & ps_Buffer[1]);
+		dataFile.close();
+	}
+
+	json_t *dataToJson() override {
+		json_t *rootJ = json_object();
+
+		json_object_set_new(rootJ, "version", json_string("2.1.0"));
+
+		for(int bi = 0; bi < BUFFER_COUNT; bi++){
+			std::string bis = std::to_string(bi);
+			json_object_set_new(rootJ, std::string("bufferLockLevel." + bis).c_str(), json_integer(bufferLockLevel[bi]));
+			json_object_set_new(rootJ, std::string("loopSize." + bis).c_str(), json_integer(loopSize[bi]));
+		}
+
+		json_object_set_new(rootJ, "playbackCrossFadeBufferIndex" , json_integer(playbackCrossFadeBufferIndex));
+		json_object_set_new(rootJ, "recordCrossFadePreBufferIndex" , json_integer(recordCrossFadePreBufferIndex));
+
+		json_object_set_new(rootJ, "recordIndex" , json_real(recordIndex));
+		json_object_set_new(rootJ, "recordBuffer" , json_integer(recordBuffer));
+		json_object_set_new(rootJ, "playbackIndex" , json_integer(playbackIndex));
+		json_object_set_new(rootJ, "playbackBuffer" , json_integer(playbackBuffer));
+
+		json_object_set_new(rootJ, "playbackClockHigh" , json_bool(playbackClockHigh));
+		json_object_set_new(rootJ, "recordClockHigh" , json_bool(recordClockHigh));
+
+		json_object_set_new(rootJ, "feedbackValue.0" , json_real(feedbackValue[0]));
+		json_object_set_new(rootJ, "feedbackValue.1" , json_real(feedbackValue[1]));
+		json_object_set_new(rootJ, "playbackRepeatCount" , json_integer(playbackRepeatCount));
+
+		json_object_set_new(rootJ, "nextReadPatternIndex" , json_integer(nextReadPatternIndex));
+
+		json_object_set_new(rootJ, "prevInput.0" , json_real(prevInput[0]));
+		json_object_set_new(rootJ, "prevInput.1" , json_real(prevInput[1]));
+		json_object_set_new(rootJ, "fadeInStart" , json_integer(fadeInStart));
+
+		json_object_set_new(rootJ, "pitchCorrectionOn" , json_bool(pitchCorrectionOn));
+
+		return rootJ;
+	}
+
+	void dataFromJson(json_t *rootJ) override {
+
+		for(int bi = 0; bi < BUFFER_COUNT; bi++){
+			std::string bis = std::to_string(bi);
+			bufferLockLevel[bi] = (LockLevel)json_integer_value(json_object_get(rootJ, std::string("bufferLockLevel." + bis).c_str()));
+			loopSize[bi] = json_integer_value(json_object_get(rootJ, std::string("loopSize." + bis).c_str()));
+		}
+
+		playbackCrossFadeBufferIndex = json_integer_value(json_object_get(rootJ, "playbackCrossFadeBufferIndex"));
+		recordCrossFadePreBufferIndex = json_integer_value(json_object_get(rootJ, "recordCrossFadePreBufferIndex"));
+
+		recordIndex = json_real_value(json_object_get(rootJ, "recordIndex"));
+		recordBuffer = json_integer_value(json_object_get(rootJ, "recordBuffer"));
+		playbackIndex = json_integer_value(json_object_get(rootJ, "playbackIndex"));
+		playbackBuffer = json_integer_value(json_object_get(rootJ, "playbackBuffer"));
+
+		playbackClockHigh = json_is_true(json_object_get(rootJ, "playbackClockHigh"));
+		recordClockHigh = json_is_true(json_object_get(rootJ, "recordClockHigh"));
+
+		feedbackValue[0] = json_real_value(json_object_get(rootJ, "feedbackValue.0"));
+		feedbackValue[1] = json_real_value(json_object_get(rootJ, "feedbackValue.1"));
+		playbackRepeatCount = json_integer_value(json_object_get(rootJ, "playbackRepeatCount"));
+
+		nextReadPatternIndex = json_integer_value(json_object_get(rootJ, "nextReadPatternIndex"));
+
+		prevInput[0] = json_real_value(json_object_get(rootJ, "prevInput.0"));
+		prevInput[1] = json_real_value(json_object_get(rootJ, "prevInput.1"));
+		fadeInStart = json_integer_value(json_object_get(rootJ, "fadeInStart"));
+
+		pitchCorrectionOn = json_is_true(json_object_get(rootJ, "pitchCorrectionOn"));
 	}
 
 	void process(const ProcessArgs& args) override {
-
-		if(playbackBufferLockout > 0){
-			playbackBufferLockout--;
-			if(playbackBufferLockout == 0) playback_jumpToNextTrack(false);
-		}
-
-		lowpassFilter.setCutoff(20000 / args.sampleRate);
-		highpassFilter.setCutoff(20 / args.sampleRate);
+		lowpassFilter[0].setCutoff(20000 / args.sampleRate);
+		lowpassFilter[1].setCutoff(20000 / args.sampleRate);
+		highpassFilter[0].setCutoff(20 / args.sampleRate);
+		highpassFilter[1].setCutoff(20 / args.sampleRate);
 
 		for(int bi = 0; bi < BUFFER_COUNT; bi++){
 			bool button = params[CUBE_SWITCH_PARAM + bi].getValue() > 0;
@@ -419,29 +556,43 @@ struct IceTray : Module {
 		float speed = clamp(speedNumerator / speedDenomonator,0.001f,1000.f);
 		float speedInvert = 1/speed;
 
-		feedbackValue *= params[FEEDBACK_PARAM].getValue() + params[FEEDBACK_CK_PARAM].getValue() * inputs[FEEDBACK_CV_INPUT].getVoltage() / 10.f;
+		float feedbackScalar = params[FEEDBACK_PARAM].getValue() + params[FEEDBACK_CK_PARAM].getValue() * inputs[FEEDBACK_CV_INPUT].getVoltage() / 10.f;
+		feedbackValue[0] *= feedbackScalar;
+		feedbackValue[1] *= feedbackScalar;
 
-		float rawInput = inputs[AUDIO_INPUT].getVoltageSum();
+		float rawInput [MAX_CHANNELS] = {inputs[LEFT_INPUT].getVoltageSum(), inputs[RIGHT_INPUT].getVoltageSum()};
+		bool inputConnected [MAX_CHANNELS] = {inputs[LEFT_INPUT].isConnected(), inputs[RIGHT_INPUT].isConnected()};
 
 		if (first) {
-			pShifter->init(PITCH_BUFF_SIZE, 8, args.sampleRate);
+			pShifter[0]->init(PITCH_BUFF_SIZE, 8, args.sampleRate);
+			pShifter[1]->init(PITCH_BUFF_SIZE, 8, args.sampleRate);
 			first = false;
 		}
-		in_Buffer.push(rawInput / 10.0f);
 
-		if (in_Buffer.full()) {
-			pShifter->process(speedInvert, in_Buffer.startData(), ps_Buffer.endData());
-			ps_Buffer.endIncr(PITCH_BUFF_SIZE);
-			in_Buffer.clear();
+		float pitchShiftedInput [MAX_CHANNELS] = {0,0};
+
+		for(int ci = 0; ci < MAX_CHANNELS; ci++){
+			if(!inputConnected[ci]) continue;
+
+			if(pitchCorrectionOn){
+				in_Buffer[ci].push(rawInput[ci] / 10.0f);
+
+				if (in_Buffer[ci].full()) {
+					pShifter[ci]->process(speedInvert, in_Buffer[ci].startData(), ps_Buffer[ci].endData());
+					ps_Buffer[ci].endIncr(PITCH_BUFF_SIZE);
+					in_Buffer[ci].clear();
+				}
+
+				if (ps_Buffer[ci].size() > 0) {
+					pitchShiftedInput[ci] = *ps_Buffer[ci].startData() * 6.6f;
+					ps_Buffer[ci].startIncr(1);
+				}
+			}else{
+				pitchShiftedInput[ci] = rawInput[ci];
+			}
 		}
 
-		float pitchShiftedInput = 0;
-		if (ps_Buffer.size() > 0) {
-			pitchShiftedInput = *ps_Buffer.startData() * 6.6f;
-			ps_Buffer.startIncr(1);
-		}
-
-		float input = pitchShiftedInput + feedbackValue;
+		float input [MAX_CHANNELS] = {pitchShiftedInput[0] + feedbackValue[0], pitchShiftedInput[1] + feedbackValue[1]};
 
 		int steps = floor(speedInvert);
 		//Pre Record Buffer Record
@@ -454,9 +605,11 @@ struct IceTray : Module {
 
 				int ri = low + d;
 				float percent = d / speedInvert;
-				float writeVal = prevInput * (1-percent) + input * percent;			
+				float writeVal0 = prevInput[0] * (1-percent) + input[0] * percent;
+				float writeVal1 = prevInput[1] * (1-percent) + input[1] * percent;
 
-				recordCrossFadePreBuffer[ri] = writeVal;
+				recordCrossFadePreBuffer[ri][0] = writeVal0;
+				recordCrossFadePreBuffer[ri][1] = writeVal1;
 				ri++;
 				if(ri >= CROSS_FADE_AMT){
 					low -= CROSS_FADE_AMT;
@@ -472,9 +625,11 @@ struct IceTray : Module {
 
 				int ri = low + d;
 				float percent = d / speedInvert;
-				float writeVal = prevInput * (1-percent) + input * percent;			
+				float writeVal0 = prevInput[0] * (1-percent) + input[0] * percent;
+				float writeVal1 = prevInput[1] * (1-percent) + input[1] * percent;
 
-				buffers[recordBuffer][ri] = writeVal;
+				buffers[recordBuffer][ri][0] = writeVal0;
+				buffers[recordBuffer][ri][1] = writeVal1;
 				ri++;
 				if(ri >= bufferLength){
 					record_jumpToNextTrack();
@@ -484,27 +639,33 @@ struct IceTray : Module {
 			}			
 		}
 
-		prevInput = input;
+		prevInput[0] = input[0];
+		prevInput[1] = input[1];
 
-		float output = 0;
+		float output [MAX_CHANNELS] = {0,0};
 		if(playbackBuffer >= 0){
 			int ls = loopSize[playbackBuffer];		
 			int pbi = playbackIndex;
 
 			while(pbi > ls) pbi -= ls;
-			output = buffers[playbackBuffer][pbi];
+			output[0] = buffers[playbackBuffer][pbi][0];
+			output[1] = buffers[playbackBuffer][pbi][1];
 
 			//Note toStart is intentinally calcuated before wrapping
 			int toStart = playbackIndex - fadeInStart;			
 			if(toStart < CROSS_FADE_AMT){
 				float scalar = ((float)toStart/CROSS_FADE_AMT);
-				output *= clamp(scalar,0.f,1.0f);
+				scalar = clamp(scalar,0.f,1.0f);
+				output[0] *= scalar;
+				output[1] *= scalar;
 			}
 
 			int toEnd = ls - pbi;
 			if(toEnd < CROSS_FADE_AMT){
 				float scalar = ((float)toEnd/CROSS_FADE_AMT);
-				output *= clamp(scalar,0.f,1.0f);
+				scalar = clamp(scalar,0.f,1.0f);
+				output[0] *= scalar;
+				output[1] *= scalar;
 			}
 
 			playbackIndex++;
@@ -520,20 +681,29 @@ struct IceTray : Module {
 		}
 
 		if(playbackCrossFadeBufferIndex < CROSS_FADE_AMT){
-			float crossOut = playbackCrossFadeBuffer[playbackCrossFadeBufferIndex];
+			float crossOut0 = playbackCrossFadeBuffer[playbackCrossFadeBufferIndex][0];
+			float crossOut1 = playbackCrossFadeBuffer[playbackCrossFadeBufferIndex][1];
 			playbackCrossFadeBufferIndex++;
 			float scalar = 1.f-((float)playbackCrossFadeBufferIndex/CROSS_FADE_AMT);
-			crossOut *= clamp(scalar,0.f,1.0f);
-			output += crossOut;
+			scalar = clamp(scalar,0.f,1.0f);
+			crossOut0 *= scalar;
+			crossOut1 *= scalar;
+			output[0] += crossOut0;
+			output[1] += crossOut1;
 		}
 
-		lowpassFilter.process(output);
-		output = lowpassFilter.lowpass();
-		highpassFilter.process(output);
-		output = highpassFilter.highpass();
+		for(int ci = 0; ci < MAX_CHANNELS; ci++){
+			if(std::isnan(output[ci])) output[ci] = 0;
+			lowpassFilter[ci].process(output[ci]);
+			output[ci] = lowpassFilter[ci].lowpass();
+			highpassFilter[ci].process(output[ci]);
+			output[ci] = highpassFilter[ci].highpass();
+		}
 
-		outputs[AUDIO_OUTPUT].setVoltage(output);
-		feedbackValue = output;
+		outputs[LEFT_OUTPUT].setVoltage(output[0]);
+		outputs[RIGHT_OUTPUT].setVoltage(output[1]);
+		feedbackValue[0] = output[0];
+		feedbackValue[1] = output[1];
 	}
 
 	void updateCubeLights(){
@@ -572,7 +742,8 @@ struct IceTray : Module {
 				int ls = loopSize[recordBuffer];
 				loopSize[bi] = ls;
 				for(int i = 0; i < ls; i++){
-					buffers[bi][i] = buffers[recordBuffer][i];
+					buffers[bi][i][0] = buffers[recordBuffer][i][0];
+					buffers[bi][i][1] = buffers[recordBuffer][i][1];
 				}
 			}
 		}
@@ -586,7 +757,8 @@ struct IceTray : Module {
 			for(int ci = 0; ci < CROSS_FADE_AMT; ci++){
 				int i = 1 + ci + floor(recordCrossFadePreBufferIndex);
 				if(i >= CROSS_FADE_AMT) i -= CROSS_FADE_AMT;
-				buffers[recordBuffer][ci] = recordCrossFadePreBuffer[i];
+				buffers[recordBuffer][ci][0] = recordCrossFadePreBuffer[i][0];
+				buffers[recordBuffer][ci][1] = recordCrossFadePreBuffer[i][1];
 			}
 		}
 
@@ -608,12 +780,15 @@ struct IceTray : Module {
 				int i = ci + playbackIndex;
 				if(runover){
 					while(i > ls) i -= ls;
-					playbackCrossFadeBuffer[ci] = buffers[playbackBuffer][i];
+					playbackCrossFadeBuffer[ci][0] = buffers[playbackBuffer][i][0];
+					playbackCrossFadeBuffer[ci][1] = buffers[playbackBuffer][i][1];
 				}else{
 					if(i < ls){
-						playbackCrossFadeBuffer[ci] = buffers[playbackBuffer][i];
+						playbackCrossFadeBuffer[ci][0] = buffers[playbackBuffer][i][0];
+						playbackCrossFadeBuffer[ci][1] = buffers[playbackBuffer][i][1];
 					}else{
-						playbackCrossFadeBuffer[ci] = 0;
+						playbackCrossFadeBuffer[ci][0] = 0;
+						playbackCrossFadeBuffer[ci][1] = 0;
 					}
 				}
 			}
@@ -659,13 +834,6 @@ struct IceTray : Module {
 	}
 
 	int playback_nextFreeBuffer(){
-		// if(playbackBuffer != -1){
-		// 	playbackBufferLockout = 40000;
-		// 	return -1;
-		// }
-
-		if(playbackBufferLockout > 0) return -1;
-
 		float pattern = params[PATERN_PARAM].getValue() * inputs[PATERN_CV_INPUT].getNormalVoltage(10.f)/10.f;
 
 		if(pattern < 0){
@@ -778,7 +946,8 @@ struct IceTrayWidget : ModuleWidget {
 		addParam(createParamCentered<VCVButton>(mm2px(Vec(74.851, 92.22)), module, IceTray::CUBE_SWITCH_PARAM + 5));
 
 		
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.287, 65.592)), module, IceTray::AUDIO_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.230, 58.512)), module, IceTray::LEFT_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(8.230, 72.621)), module, IceTray::RIGHT_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(49.942, 22.883)), module, IceTray::CLOCK_RECORD_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(71.911, 22.93)), module, IceTray::CLOCK_PLAYBACK_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(9.61, 24.487)), module, IceTray::SPEED_NUM_CV_INPUT));
@@ -788,7 +957,8 @@ struct IceTrayWidget : ModuleWidget {
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(9.515, 103.673)), module, IceTray::SPEED_DENOM_CV_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(76.066, 110.288)), module, IceTray::FEEDBACK_CV_INPUT));
 
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(102.122, 109.986)), module, IceTray::AUDIO_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(99.205, 108.852)), module, IceTray::LEFT_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(110.318, 108.852)), module, IceTray::RIGHT_OUTPUT));
 
 		addChild(createLightCentered<LargeLight<BlueLight>>(mm2px(Vec(51.936, 42.374)), module, IceTray::CUBE_LIGHT + 0));
 		addChild(createLightCentered<LargeLight<BlueLight>>(mm2px(Vec(51.936, 67.321)), module, IceTray::CUBE_LIGHT + 1));
@@ -823,6 +993,29 @@ struct IceTrayWidget : ModuleWidget {
 			menuItem->module = module;
 			menu->addChild(menuItem);
 		}
+
+		menu->addChild(new MenuEntry);
+		menu->addChild(createMenuLabel("Pitch Correction"));
+
+		struct PitchCorrectionMenuItem : MenuItem {
+			IceTray* module;
+			bool value;
+			void onAction(const event::Action& e) override {
+				module->pitchCorrectionOn = value;
+			}
+		};
+
+		PitchCorrectionMenuItem* mi = createMenuItem<PitchCorrectionMenuItem>("On");
+		mi->rightText = CHECKMARK(module->pitchCorrectionOn);
+		mi->module = module;
+		mi->value = true;
+		menu->addChild(mi);
+
+		mi = createMenuItem<PitchCorrectionMenuItem>("Off (Saves CPU)");
+		mi->rightText = CHECKMARK(!module->pitchCorrectionOn);
+		mi->module = module;
+		mi->value = false;
+		menu->addChild(mi);
 	}
 };
 

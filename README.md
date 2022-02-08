@@ -6,23 +6,25 @@ The Path Set is an eclectic collection of bespoke modules for [VCV Rack](https:/
 * [Ice Tray](#ice-tray) - Speed shifter and tape delay with selective memory. Perform into this and it will never forget your mistakes.
 * [Shifty](#shifty) - Gate shift register with controllable delays. Create generative gate sequences from a simple clock.
 
-There are also [Examples Patches](https://github.com/patheros/PathSetModules/tree/main/examples) for each of these modules. Note they use [other plugins](#other-plugins).
+There are also [examples patches](https://github.com/patheros/PathSetModules/tree/main/examples) for each of these modules. Note they use [other plugins](#other-plugins).
 
 ## Astro Vibe
 
 ![Image of IceTray module](https://github.com/patheros/PathSetModules/blob/main/images/AstroVibe.png)
 
-Astro Vibe is three planetary obiters that can operate as VCOs or LFOs. Each orbiter has a wide range of controllable settings as well as internal planetary signature that affects the waveform. There are over three septillion planetary signatures and once you leave one your unlikely to ever find it again.
+Astro Vibe is three planetary obiters that can operate as VCOs or LFOs. Each orbiter has a wide range of controllable settings as well as internal planetary signature that affects the waveform. There are over three septillion planetary signatures and once you leave one your unlikely to ever find it again. Does nothing when bipassed.
 
 ### Planet
 
-Each orbiter generates a unique planetary signature when the module is created and when either the `New Planet Button or Trigger` is activated. The planetary signature affects the output waveform giving it a unique signature. For the Notes waveform mode each signature creates a unique sequence of between 2 and 22 different notes to play. In the crunchy waveform mode it affects the overall timbre of the sound. There are over three septillion signatures and no way to return to one once you leave. Currently the signatures do not persist when the patch is saved.
+Each orbiter generates a unique planetary signature when the module is created and when either the `New Planet Button or Trigger` is activated. The planetary signature affects the output waveform giving it a unique signature. For the Notes waveform mode each signature creates a unique sequence of between 2 and 22 different notes to play. In the crunchy waveform mode it affects the overall timbre of the sound. There are over three septillion signatures and no way to return to one once you leave. Signatures do persist when the patch is saved.
 
 ### Clock and Freq
 
 Each orbiter has a `Clock` input which advances the notes in the Notes waveform mode. It does nothing in the Tones waveform mode. The clocks on the 2nd and 3rd orbiter are normalized to the previous orbiter, meaning you only have to connect a clock to the 1st orbiter to get all 3 going.
 
 Each orbiter also has a `Frequency Knob` and `1V/Oct Input`. These two control the overall tone of the sound in the Audible mode and the overall speed of the LFO in the LFO mode. The 1V/Oct input is also normalized between the orbiters.
+
+Note all internal routing can be disabled from the contextual menu.
 
 ### Engine and Waveform
 
@@ -36,23 +38,28 @@ When the `Waveform` mode is on `Notes`the sound is melodic and plays a sequence 
 
 The `Space Input`, `Spin Input` and `Warp Knob`all adjust the timbre of the sound as well as the panning between the left and right channels. The overall effect is more pronounced on the Tones waveform.
 
-The Space and Spin Inputs are double normalized. If the previous orbiter is set to LFO mode, then the left and right channels are routed to the Space and Spin respectively. If not, then the previous orbiters space and spin inputs are carried forward.
+The Space and Spin Inputs are double normalized. If the previous orbiter is set to LFO mode, then the left and right channels are routed to the Space and Spin respectively. If not, then the previous orbiters space and spin inputs are carried forward. This internal routing can be disabled from the contextual menu.
 
 ### LFO vs Audio
 
 Each orbiter has an `Speed` toggle that switches between an `Audible` mode and a `LFO` mode. In the Audible mode the output is also added to the master output at the top of the Module. In the LFO mode the output is normalized into the next orbiter's Space and Spin.
 
+### Gain
+
+Each orbiter has a `Gain` knob under its output. This gain is applied in both `Audible` and `LFO` mode. When the gain is turned to the left past the half way point the voltages are inverted.
+
 ### Examples
 * [AstroVibe_Example1](https://github.com/patheros/PathSetModules/blob/main/examples/AstroVibe_Example1.vcv) - Shows all 4 possible combinations of Engine and Waveform when used in audio output. Also demonstrates the variety the planetary signature provides the oscillator. 
 * [AstroVibe_Example2](https://github.com/patheros/PathSetModules/blob/main/examples/AstroVibe_Example2.vcv) - Polyphonic example also using one of the obiters as an LFO and the internal routing.
 * [AstroVibe_Example3](https://github.com/patheros/PathSetModules/blob/main/examples/AstroVibe_Example3.vcv) - More complete atmospheric patch showing off two AstroVibes.
-* Note examples use [other plugins](#other-plugins).
+
+Note examples use [other plugins](#other-plugins).
 
 ## Ice Tray
 
 ![Image of IceTray module](https://github.com/patheros/PathSetModules/blob/main/images/IceTray.png)
 
-Ice Tray is a speed shifter and six tape delays, called ice cubes. Each cube can solidify, capturing what ever was last recorded into it for an indefinite amount of time.
+Ice Tray is a speed shifter and six tape delays, called ice cubes. Each cube can solidify, capturing what ever was last recorded into it for an indefinite amount of time. Left and Right inputs are connected directly to the outputs when bipassed.
 
 ### Ice Cubes
 
@@ -66,7 +73,7 @@ You can press the light to change its solidity. The large `Frozen Percent` knob 
 
 The small light on the cube indicates which ice cube is being recorded (red) to and which is being played back (green). An ice cube can't be both at the same time.
 
-Note the recordings on the cubes currently do not persist when the patch is saved. The recordings can also be cleared through the `Clear Cubes` option in the contextual menu.
+Recordings on the cubes will persist when the patch is saved. The recordings can also be cleared through the `Clear Cubes` option in the contextual menu.
 
 ### Clocks
 
@@ -80,7 +87,7 @@ The `Playback Clock Resets Position` toggle controls where the playback starts o
 
 ### Speed Shift
 
-The two large dials on the left control the speed at which the input signal is recorded. They do not control the pitch though, that is maintained regardless of the playback speed.
+The two large dials on the left control the speed at which the input signal is recorded. The pitch of the audio is corrected to maintain the original pitch regardless of playback speed. This can be CPU intensive and can be disabled from the contextual menu.
 
 The `Numerator`  is divided by the `Denominator` to compute the final speed. Both the numerator and denominator can be modulated using the CV inputs and CV scalars. The modulated value is added to that on the large dial. The numerator and denominator are each rounded to the nearest whole number before computing the final speed.
 
@@ -105,13 +112,15 @@ Note examples use [other plugins](#other-plugins).
 
 ![Image of IceTray module](https://github.com/patheros/PathSetModules/blob/main/images/Shifty.png)
 
-Shifty is a shift register for gates / triggers with controllable lookback / delay. Shifty lets you take a simple gate sequence  and create seven varied gate outputs.
+Shifty is a shift register for gates / triggers with controllable lookback / delay. Shifty lets you take a simple gate sequence and create seven varied gate outputs.
 
-The easiest way to get started with Shifty is connect a reasonably fast clock signal to the `Clock` input. Every 8th clock you'll see the the top blue light turn on and then shift down once with each clock.
+Shifty has a built in clock and clock divider. So unpatched you see that every second or so the the top blue light turn on and then shift down.
 
-You can connect another input to `Trigger` or adjust the `Clock Divider` to change how frequently the first blue light turns on.
+You can control the speed at which the lights shift with the `Clock Rate` knob or by patching in your own `Clock`. The `Clock Divider` or `Trigger` controls how often the top light turns on.
 
 Connect to the seven `Output Gates` to tap into those delayed clock signals.
+
+All seven outputs are connected directly to the `Trigger` when bipassed.
 
 ### Delay
 
@@ -119,7 +128,7 @@ By default Shifty is set up to delay each row by one beat / clock. This can be c
 
 Bellow the ramp knob are the `Delay CV inputs and knobs`. These add to the ramp value allowing you adjust the delay up or down for each row.  The `Delay` input is normalized to white noise allowing you to just use the knobs to add randomness. The noise ranges from 0 to 10 volts and at 10 volts the row is delayed an extra 16 beats.
 
-Finally you can add stability to to the delays with the `Sample & Hold` knob. This knob controls how likely each row's total delay value is to be held, indicated by the red light in the row. Turning the knob all the way to the right effectively freezes the current delay pattern. Note the sample and hold chance is triggered every time the clock divider triggers, regardless of whether or not the trigger input is connected. Currently the sample and hold values do not persisted when the patch is saved.
+Finally you can add stability to to the delays with the `Sample & Hold` knob. This knob controls how likely each row's total delay value is to be held, indicated by the red light in the row. Turning the knob all the way to the right effectively freezes the current delay pattern. Note the sample and hold chance is triggered every time the clock divider triggers, regardless of whether or not the trigger input is connected. The sample and hold values persist when the patch is saved.
 
 ### Echo and Mute
 
@@ -130,11 +139,13 @@ Turn the`Echo` knob up to add up to 3 extra hits to that row's gate. Each of the
 The `Mute` knob suppresses hits. If you have a frequent trigger or a lot of echos it can be helpful mute some of the hits. The mute knob pans through 693 different 24 beat patterns ranging from all beats passing to no beats passing. The mute pattern is further modified by the delay values so that you crank the clock divider all the way down to 1 you can still use the mute knob to get interesting and changing patterns.
 
 ### Examples
+* [Shifty_Example0](https://github.com/patheros/PathSetModules/blob/main/examples/Shifty_Example0.vcv) - Using Shifty as a Clock
 * [Shifty_Example1](https://github.com/patheros/PathSetModules/blob/main/examples/Shifty_Example1.vcv) - Uses the first two gates of Shift to drive a drum beat out of two [Palettes](https://library.vcvrack.com/Atelier/AtelierPalette) and the remaining gates are used as CVs on the VCOs and effects.
 * [Shifty_Example2](https://github.com/patheros/PathSetModules/blob/main/examples/Shifty_Example2.vcv) - 5 Shiftys working to drive 3 different voices. Each voice showing off different ways to use Shifty.
 * [Shifty_Example3](https://github.com/patheros/PathSetModules/blob/main/examples/Shifty_Example3.vcv) - Shifty outputs are merged to create a polyphonic gate. Along with a polyphonic VCO this creates melodic variety with a high degree of configurability.
 * [Shifty_Example4](https://github.com/patheros/PathSetModules/blob/main/examples/Shifty_Example4.vcv) - More examples of melodic patterns created by Shifty and chaining shifty together.
 * [Shifty_Example5](https://github.com/patheros/PathSetModules/blob/main/examples/Shifty_Example5.vcv) - Using LFOs to mores slowly change Shifty's pattern over time. 
+
 
 Note examples use [other plugins](#other-plugins).
 
@@ -155,4 +166,5 @@ The [examples patches](https://github.com/patheros/PathSetModules/tree/main/exam
 1. [JW-Modules](https://library.vcvrack.com/JW-Modules)
 1. [Mind Meld](https://library.vcvrack.com/MindMeldModular)
 1. [Palette](https://library.vcvrack.com/Atelier/AtelierPalette)
+1. [RCM](https://library.vcvrack.com/rcm)
 1. [Vult Free](https://library.vcvrack.com/VultModulesFree)

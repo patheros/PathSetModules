@@ -4,6 +4,7 @@ License: GNU GPL-3.0
 */
 
 #include "plugin.hpp"
+#include "util.hpp"
 
 #define ROW_COUNT 3
 #define MAX_CHANNELS 16
@@ -55,6 +56,10 @@ struct AstroVibe : Module {
 		SPEED_SWITCH_1_PARAM,
 		SPEED_SWITCH_2_PARAM,
 		SPEED_SWITCH_3_PARAM,
+
+		LEVEL_1_PARAM,
+		LEVEL_2_PARAM,
+		LEVEL_3_PARAM,
 		
 		PARAMS_LEN
 	};
@@ -140,15 +145,105 @@ struct AstroVibe : Module {
 			float modeCycle;
 			bool engineFlip;
 			bool flavorFlip;
+
+			json_t *dataToJson() {
+				json_t *engineJ = json_object();
+					
+				json_object_set_new(engineJ, "clockTriggerHigh", json_bool(clockTriggerHigh));
+
+				json_object_set_new(engineJ, "stepCnt", json_integer(stepCnt));
+				json_object_set_new(engineJ, "stepIndex", json_integer(stepIndex));
+
+				json_object_set_new(engineJ, "outputValue.0", json_real(outputValue[0]));
+				json_object_set_new(engineJ, "outputValue.1", json_real(outputValue[1]));
+				json_object_set_new(engineJ, "internalState.0", json_real(internalState[0]));
+				json_object_set_new(engineJ, "internalState.1", json_real(internalState[1]));
+				json_object_set_new(engineJ, "outputHistory.0", json_real(outputHistory[0]));
+				json_object_set_new(engineJ, "outputHistory.1", json_real(outputHistory[1]));
+
+				json_object_set_new(engineJ, "frameDrop", json_real(frameDrop));
+
+				json_object_set_new(engineJ, "gv.0", json_real(gv[0]));
+				json_object_set_new(engineJ, "gv.1", json_real(gv[1]));
+
+				json_object_set_new(engineJ, "modeCycle", json_real(modeCycle));
+				json_object_set_new(engineJ, "engineFlip", json_bool(engineFlip));
+				json_object_set_new(engineJ, "flavorFlip", json_bool(flavorFlip));
+				return engineJ;
+			}
+
+			void dataFromJson(json_t *engineJ) {					
+				clockTriggerHigh = json_is_true(json_object_get(engineJ, "clockTriggerHigh"));
+
+				stepCnt = json_real_value(json_object_get(engineJ, "stepCnt"));
+				stepIndex = json_real_value(json_object_get(engineJ, "stepIndex"));
+
+				outputValue[0] = json_real_value(json_object_get(engineJ, "outputValue.0"));
+				outputValue[1] = json_real_value(json_object_get(engineJ, "outputValue.1"));
+				internalState[0] = json_real_value(json_object_get(engineJ, "internalState.0"));
+				internalState[1] = json_real_value(json_object_get(engineJ, "internalState.1"));
+				outputHistory[0] = json_real_value(json_object_get(engineJ, "outputHistory.0"));
+				outputHistory[1] = json_real_value(json_object_get(engineJ, "outputHistory.1"));
+
+				frameDrop = json_real_value(json_object_get(engineJ, "frameDrop"));
+
+				gv[0] = json_real_value(json_object_get(engineJ, "gv.0"));
+				gv[1] = json_real_value(json_object_get(engineJ, "gv.1"));
+
+				modeCycle = json_real_value(json_object_get(engineJ, "modeCycle"));
+				engineFlip = json_is_true(json_object_get(engineJ, "engineFlip"));
+				flavorFlip = json_is_true(json_object_get(engineJ, "flavorFlip"));
+			}
 		};
 		Engine engines [MAX_CHANNELS];
 		
 		bool resetTriggerHigh;
 		bool resetButtonHigh;
 		std::vector<int> sequence;
+
+		json_t *dataToJson() {
+			json_t *rowJ = json_object();
+				
+			json_t *enginesJ = json_array();
+			for(int ei = 0; ei < MAX_CHANNELS; ei++){
+				json_array_insert_new(enginesJ, ei, engines[ei].dataToJson());
+			}
+			json_object_set_new(rowJ, "engines", enginesJ);
+
+			json_object_set_new(rowJ, "resetTriggerHigh", json_bool(resetTriggerHigh));
+			json_object_set_new(rowJ, "resetButtonHigh", json_bool(resetButtonHigh));
+
+			json_t *sequenceJ = json_array();
+			int sequenceLength = sequence.size();
+			for(int si = 0; si < sequenceLength; si++){
+				json_array_insert_new(sequenceJ, si, json_integer(sequence[si]));
+			}
+			json_object_set_new(rowJ, "sequence", sequenceJ);
+
+			return rowJ;
+		}
+
+		void dataFromJson(json_t *rowJ) {
+			json_t *enginesJ = json_object_get(rowJ, "engines");
+			for(int ei = 0; ei < MAX_CHANNELS; ei++){
+				engines[ei].dataFromJson(json_array_get(enginesJ,ei));
+			}
+
+			resetTriggerHigh = json_is_true(json_object_get(rowJ, "resetTriggerHigh"));
+			resetButtonHigh = json_is_true(json_object_get(rowJ, "resetButtonHigh"));
+
+			sequence.clear();
+			json_t *sequenceJ = json_object_get(rowJ, "sequence");
+			int sequenceLength = json_array_size(sequenceJ);
+			for(int si = 0; si < sequenceLength; si++){
+				sequence.push_back(json_integer_value(json_array_get(sequenceJ, si)));
+			}
+		}
 	};
 
 	Row rows [ROW_COUNT];
+
+	bool internalRoutingEnabled = true;
 
 	AstroVibe() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -160,9 +255,10 @@ struct AstroVibe : Module {
 			configParam(TRAVEL_BUTTON_1_PARAM + i, 0.f, 1.f, 0.f, "New Planet " + is);
 			configParam(FREQ_KNOB_1_PARAM + i, 0.0001f, 4.f, 1.f, "Frequency " + is);
 			configParam(TIMBRE_KNOB_1_PARAM + i, 0.f, 1.f, 0.5f, "Warp " + is);
+			configParam(LEVEL_1_PARAM + i, -1.f, 1.f, 1.f, "Gain " + is);
 			configSwitch(ENGINE_SWITCH_1_PARAM + i, 0.f, 1.f, 0.f, "Engine " + is, std::vector<std::string>{"Black Hole","Atomic"});
 			configSwitch(FLAVOR_SWITCH_1_PARAM + i, 0.f, 1.f, 0.f, "Waveform " + is, std::vector<std::string>{"Tones","Notes"});
-			configSwitch(SPEED_SWITCH_1_PARAM + i, 0.f, 1.f, 0.f, "Speed " + is, std::vector<std::string>{"LFO","Audible"});
+			configSwitch(SPEED_SWITCH_1_PARAM + i, 0.f, 1.f, 1.f, "Speed " + is, std::vector<std::string>{"LFO","Audible"});
 			configInput(ENGINE_CV_1_INPUT + i, "Engine Flip Gate " + is);
 			configInput(FLAVOR_CV_1_INPUT + i, "Waveform Flip Gate " + is);
 			configInput(TRAVEL_TRIG_1_INPUT + i, "New Planet Trigger " + is);
@@ -203,12 +299,38 @@ struct AstroVibe : Module {
 			rows[ri].resetButtonHigh = false;
 			pickNewSequence(ri);
 		}
+		internalRoutingEnabled = true;
 	}
 
 	void onReset(const ResetEvent& e) override {
 		Module::onReset(e);
 
 		resetState();
+	}
+
+	json_t *dataToJson() override {
+		json_t *rootJ = json_object();
+
+		json_object_set_new(rootJ, "version", json_string("2.1.0"));
+
+		json_t *rowsJ = json_array();
+		for(int ri = 0; ri < ROW_COUNT; ri++){
+			json_array_insert_new(rowsJ, ri, rows[ri].dataToJson());
+		}
+		json_object_set_new(rootJ, "rows", rowsJ);
+
+		json_object_set_new(rootJ, "internalRoutingEnabled", json_bool(internalRoutingEnabled));
+
+		return rootJ;
+	}
+
+	void dataFromJson(json_t *rootJ) override {
+		json_t *rowsJ = json_object_get(rootJ, "rows");
+		for(int ri = 0; ri < ROW_COUNT; ri++){
+			rows[ri].dataFromJson(json_array_get(rowsJ, ri));
+		}
+
+		internalRoutingEnabled = json_is_true(json_object_get(rootJ, "internalRoutingEnabled"));
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -258,13 +380,16 @@ struct AstroVibe : Module {
 				if(inputs[CLOCK_1_INPUT + ri2].isConnected()){
 					channels = std::max(channels,inputs[CLOCK_1_INPUT + ri2].getChannels());
 					break;
-				}		
+				}	
+				if(!internalRoutingEnabled) break;	
 			}
-			for(int ri2 = ri; ri2 >= 0; ri2--){
-				if(inputs[FREQ_CV_1_INPUT + ri2].isConnected()){
-					channels = std::max(channels,inputs[FREQ_CV_1_INPUT + ri2].getChannels());
-					break;
-				}		
+			if(internalRoutingEnabled){
+				for(int ri2 = ri; ri2 >= 0; ri2--){
+					if(inputs[FREQ_CV_1_INPUT + ri2].isConnected()){
+						channels = std::max(channels,inputs[FREQ_CV_1_INPUT + ri2].getChannels());
+						break;
+					}		
+				}
 			}
 			unsigned int engineCount = (unsigned int)channels;
 
@@ -283,6 +408,7 @@ struct AstroVibe : Module {
 						freqCV = inputs[FREQ_CV_1_INPUT + ri2].getPolyVoltage(ei);
 						break;
 					}
+					if(!internalRoutingEnabled) break;
 				}
 
 				float colorCV = 0;
@@ -291,6 +417,7 @@ struct AstroVibe : Module {
 						colorCV = inputs[TIMBRE_CV_1_INPUT + ri2].getPolyVoltage(ei);
 						break;
 					}
+					if(!internalRoutingEnabled) break;
 					if(ri2 == 0) break;
 					ri2--;
 					if(rowSpeed[ri2] == LFO){
@@ -308,6 +435,7 @@ struct AstroVibe : Module {
 							clockValue = inputs[CLOCK_1_INPUT + ri2].getPolyVoltage(ei);
 							break;
 						}
+						if(!internalRoutingEnabled) break;
 					}
 
 					if(!e->clockTriggerHigh && clockValue > 2.0f){
@@ -326,7 +454,9 @@ struct AstroVibe : Module {
 					}
 				}
 
-				float tone = knobTones + pow(2,freqCV);
+				//if(speed == LFO) frameLength *= 1000;
+
+				float tone = knobTones * pow(2,freqCV);
 				float color = clamp(knobColor + colorCV / 10.f,0.f,1.f);
 
 				float frameLength = 10.f / tone;
@@ -390,6 +520,7 @@ struct AstroVibe : Module {
 								angleCV = inputs[SPIN_1_INPUT + ri2].getPolyVoltage(ei);
 								break;
 							}
+							if(!internalRoutingEnabled) break;
 							if(ri2 == 0) break;
 							ri2--;
 							if(rowSpeed[ri2] == LFO){
@@ -471,15 +602,20 @@ struct AstroVibe : Module {
 					//Attempt to remove DC offset
 					output -= e->gv[d];
 
+					float level = params[LEVEL_1_PARAM + ri].getValue();
+
 					if(speed == Audible){
 						output /= 2.f;
 						output = clamp(output,-5.f,5.f);
-						e->outputHistory[d] = 0.99f * e->outputHistory[d] + 0.01 * output;
+						output *= level * level; //Make level exponential on audio signals to better map to decibells
+						e->outputHistory[d] = 0.99f * e->outputHistory[d] + 0.01f * output;
 						output = e->outputHistory[d];
 					}else{
 						output = clamp(output,-10.f,10.f) / 2.f + 5.0f;
+						output *= level;
 						if(flavor == Notes){
-							e->outputHistory[d] = 0.9999f * e->outputHistory[d] + 0.0001 * output;
+							float speed = 0.000033f * tone;
+							e->outputHistory[d] = (1.f-speed) * e->outputHistory[d] + speed * output;
 							output = e->outputHistory[d];
 						}
 					}
@@ -549,18 +685,23 @@ struct AstroVibeWidget : ModuleWidget {
 		addParam(createParamCentered<PB61303>(mm2px(Vec(9.131, 51.724)), module, AstroVibe::TRAVEL_BUTTON_1_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(37.676, 51.779)), module, AstroVibe::FREQ_KNOB_1_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(92.738, 51.779)), module, AstroVibe::TIMBRE_KNOB_1_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(126.885, 54.834)), module, AstroVibe::LEVEL_1_PARAM));
+
 		addParam(createParamCentered<CKSS>(mm2px(Vec(108.516, 73.082)), module, AstroVibe::SPEED_SWITCH_2_PARAM));
 		addParam(createParamCentered<CKSS>(mm2px(Vec(53.94, 73.89)), module, AstroVibe::ENGINE_SWITCH_2_PARAM));
 		addParam(createParamCentered<CKSS>(mm2px(Vec(73.691, 73.804)), module, AstroVibe::FLAVOR_SWITCH_2_PARAM));
 		addParam(createParamCentered<PB61303>(mm2px(Vec(9.131, 83.474)), module, AstroVibe::TRAVEL_BUTTON_2_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(37.676, 83.529)), module, AstroVibe::FREQ_KNOB_2_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(92.738, 83.529)), module, AstroVibe::TIMBRE_KNOB_2_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(126.885, 86.584)), module, AstroVibe::LEVEL_2_PARAM));
+
 		addParam(createParamCentered<CKSS>(mm2px(Vec(108.516, 104.832)), module, AstroVibe::SPEED_SWITCH_3_PARAM));
 		addParam(createParamCentered<CKSS>(mm2px(Vec(53.94, 105.64)), module, AstroVibe::ENGINE_SWITCH_3_PARAM));
 		addParam(createParamCentered<CKSS>(mm2px(Vec(73.691, 105.554)), module, AstroVibe::FLAVOR_SWITCH_3_PARAM));
 		addParam(createParamCentered<PB61303>(mm2px(Vec(9.131, 115.224)), module, AstroVibe::TRAVEL_BUTTON_3_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(37.676, 115.279)), module, AstroVibe::FREQ_KNOB_3_PARAM));
 		addParam(createParamCentered<RoundBlackKnob>(mm2px(Vec(92.738, 115.279)), module, AstroVibe::TIMBRE_KNOB_3_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(126.885, 118.168)), module, AstroVibe::LEVEL_3_PARAM));
 
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(9.226, 32.394)), module, AstroVibe::TRAVEL_TRIG_1_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(23.451, 32.394)), module, AstroVibe::CLOCK_1_INPUT));
@@ -592,6 +733,33 @@ struct AstroVibeWidget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(131.962, 73.082)), module, AstroVibe::RIGHT_2_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(121.379, 104.832)), module, AstroVibe::LEFT_3_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(131.962, 104.832)), module, AstroVibe::RIGHT_3_OUTPUT));
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		AstroVibe* module = dynamic_cast<AstroVibe*>(this->module);
+
+		menu->addChild(new MenuEntry);
+		menu->addChild(createMenuLabel("Internal Routing"));
+
+		struct InternalRoutingMenuItem : MenuItem {
+			AstroVibe* module;
+			bool value;
+			void onAction(const event::Action& e) override {
+				module->internalRoutingEnabled = value;
+			}
+		};
+
+		InternalRoutingMenuItem* mi = createMenuItem<InternalRoutingMenuItem>("On");
+		mi->rightText = CHECKMARK(module->internalRoutingEnabled);
+		mi->module = module;
+		mi->value = true;
+		menu->addChild(mi);
+
+		mi = createMenuItem<InternalRoutingMenuItem>("Off");
+		mi->rightText = CHECKMARK(!module->internalRoutingEnabled);
+		mi->module = module;
+		mi->value = false;
+		menu->addChild(mi);
 	}
 };
 

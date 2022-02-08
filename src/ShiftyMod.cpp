@@ -4,6 +4,7 @@ License: GNU GPL-3.0
 */
 
 #include "plugin.hpp"
+#include "util.hpp"
 
 static const int NUM_ROWS = 7;
 static const int HIT_QUEUE_BASE_SIZE = 16;
@@ -22,6 +23,7 @@ struct ShiftyMod : Module {
 		ENUMS(DELAY_SCALE_PARAMS, NUM_ROWS),
 		ENUMS(ECHO_PARAMS, NUM_ROWS),
 		ENUMS(MUTE_PARAMS, NUM_ROWS),		
+		CLOCK_RATE_PARAM,
 		PARAMS_LEN
 	};
 	enum InputId {
@@ -43,6 +45,7 @@ struct ShiftyMod : Module {
 	};
 
 	int clockDividerCount = 0;
+	float internalClock = 0;
 
 	bool clockHigh = false;
 	bool triggerHigh = false;
@@ -69,6 +72,7 @@ struct ShiftyMod : Module {
 		configParam(RAMP_PARAM, 0.f, 2.f, 1.f, "Ramp Delay"," beats / step down");
 		//Note acutal range here is 1 to 16, but offseting by .4 so that 8 points straight up
 		configParam(CLOCK_DIVIDER_PARAM, 0.6f, 15.6f, 8.f, "Clock Divider"," beats / trigger");
+		configParam(CLOCK_RATE_PARAM, 10.f, 5000.f, 500.f, "Clock Rate"," bpm");
 		configParam(SAMPLE_AND_HOLD_PARAM, 0.f, 1.f, 0.0f, "Sample & Hold", "% chance of hold", 0.f, 100.f, 0.f);
 		configInput(CLOCK_INPUT, "Clock");
 		configInput(TRIGGER_INPUT, "Trigger");
@@ -83,6 +87,97 @@ struct ShiftyMod : Module {
 		}
 	}
 
+	void onReset(const ResetEvent& e) override {
+		Module::onReset(e);
+
+		clockDividerCount = 0;
+		internalClock = 0;
+
+		clockHigh = false;
+		triggerHigh = false;
+
+		for(int row = 0; row < NUM_ROWS; row ++){
+			outputOn [row] = false;
+	
+			noiseValue [row] = 0.f;
+
+			prevHitPreMute [row] = false;
+			muteCount [row] = 0.f;
+
+			heldDelayOn [row] = false;
+			heldDelayValue [row] = 0.f;
+		}
+
+		memset(hitQueue, 0, sizeof hitQueue);
+	}
+
+	json_t *dataToJson() override {
+		json_t *rootJ = json_object();
+
+		json_object_set_new(rootJ, "version", json_string("2.1.0"));
+
+		json_object_set_new(rootJ, "clockDividerCount" , json_integer(clockDividerCount));
+		json_object_set_new(rootJ, "internalClock" , json_real(internalClock));
+
+		json_object_set_new(rootJ, "clockHigh" , json_bool(clockHigh));
+		json_object_set_new(rootJ, "triggerHigh" , json_bool(triggerHigh));
+
+		json_t *rowsJ = json_array();
+		for(int row = 0; row < NUM_ROWS; row ++){
+			json_t *rowJ = json_object();
+
+			json_object_set_new(rowJ, "outputOn" , json_bool(outputOn[row]));
+
+			json_object_set_new(rowJ, "noiseValue" , json_real(noiseValue[row]));
+
+			json_object_set_new(rowJ, "prevHitPreMute" , json_bool(prevHitPreMute[row]));
+			json_object_set_new(rowJ, "muteCount" , json_real(muteCount[row]));
+
+			json_object_set_new(rowJ, "heldDelayOn" , json_bool(heldDelayOn[row]));
+			json_object_set_new(rowJ, "heldDelayValue" , json_real(heldDelayValue[row]));
+
+			json_array_insert_new(rowsJ, row, rowJ);
+		}
+		json_object_set_new(rootJ, "rows", rowsJ);
+
+		json_t *hitQueueJ = json_array();
+		for(int hi = 0; hi < HIT_QUEUE_FULL_SIZE; hi ++){
+			json_array_insert_new(hitQueueJ, hi, json_bool(hitQueue[hi]));
+		}
+		json_object_set_new(rootJ, "hitQueue", hitQueueJ);
+
+		return rootJ;
+	}
+
+	void dataFromJson(json_t *rootJ) override {
+		
+		clockDividerCount = json_integer_value(json_object_get(rootJ, "clockDividerCount"));
+		internalClock = json_real_value(json_object_get(rootJ, "internalClock"));
+
+		clockHigh = json_is_true(json_object_get(rootJ, "clockHigh"));
+		triggerHigh = json_is_true(json_object_get(rootJ, "triggerHigh"));
+
+		json_t *rowsJ = json_object_get(rootJ, "rows");
+		for(int row = 0; row < NUM_ROWS; row ++){
+			json_t *rowJ = json_array_get(rowsJ,row);
+
+			outputOn[row] = json_is_true(json_object_get(rowJ, "outputOn"));
+			
+			noiseValue[row] = json_real_value(json_object_get(rowJ, "noiseValue"));
+
+			prevHitPreMute[row] = json_is_true(json_object_get(rowJ, "prevHitPreMute"));			
+			muteCount[row] = json_real_value(json_object_get(rowJ, "muteCount"));
+
+			heldDelayOn[row] = json_is_true(json_object_get(rowJ, "heldDelayOn"));			
+			heldDelayValue[row] = json_real_value(json_object_get(rowJ, "heldDelayValue"));
+		}
+
+		json_t *hitQueueJ = json_object_get(rootJ, "hitQueue");
+		for(int hi = 0; hi < HIT_QUEUE_FULL_SIZE; hi ++){
+			hitQueue[hi] = json_is_true(json_array_get(hitQueueJ, hi));
+		}
+	}
+
 	void process(const ProcessArgs& args) override {
 		bool hitEvent = false;
 		bool clockEvent = false;
@@ -90,8 +185,19 @@ struct ShiftyMod : Module {
 
 		bool triggerConnected = inputs[TRIGGER_INPUT].isConnected();
 
+		float clock;
+		if(inputs[CLOCK_INPUT].isConnected()){
+			//External Clock
+			clock = inputs[CLOCK_INPUT].getVoltage();
+		}else{
+			//Internal Clock
+			internalClock += args.sampleTime / 60.f * params[CLOCK_RATE_PARAM].getValue();
+			while(internalClock > 1) internalClock--;
+			clock = internalClock > 0.5 ? 10 : 0;
+		}
+
 		//Clock Edge Detection
-		float clock = inputs[CLOCK_INPUT].getVoltage();
+		
 		if (!clockHigh && clock > 2.0f) {
 			clockHigh = true;
 			clockEvent = true;
@@ -287,9 +393,10 @@ struct ShiftyModWidget : ModuleWidget {
 		addParam(createParamCentered<Trimpot>(mm2px(Vec(27.921, 32.9)), module, ShiftyMod::SAMPLE_AND_HOLD_PARAM));
 
 		//Upper Right
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(73.699, 29.073)), module, ShiftyMod::CLOCK_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(72.817, 12.721)), module, ShiftyMod::CLOCK_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(59.55, 29.131)), module, ShiftyMod::TRIGGER_INPUT));
-		addParam(createParamCentered<RotarySwitch<Trimpot>>(mm2px(Vec(66.294, 10.727)), module, ShiftyMod::CLOCK_DIVIDER_PARAM));
+		addParam(createParamCentered<RotarySwitch<Trimpot>>(mm2px(Vec(73.863, 29.400)), module, ShiftyMod::CLOCK_DIVIDER_PARAM));
+		addParam(createParamCentered<Trimpot>(mm2px(Vec(57.459, 12.538)), module, ShiftyMod::CLOCK_RATE_PARAM));
 
 		//Rows
 		const float ROW_YS [] = {48.385,58.969,69.557,80.017,90.723,101.301,111.862};
