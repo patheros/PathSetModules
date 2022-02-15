@@ -392,10 +392,10 @@ struct IceTray : Module {
 	    	dataFile.read( (char *)& buffers[0][0][0], BUFFER_COUNT * BUFFER_SIZE_MAX * MAX_CHANNELS * sizeof(float) );
 			dataFile.read( (char *)& playbackCrossFadeBuffer[0][0], CROSS_FADE_AMT * MAX_CHANNELS * sizeof(float) );
 			dataFile.read( (char *)& recordCrossFadePreBuffer[0][0], CROSS_FADE_AMT * MAX_CHANNELS * sizeof(float) );
-			readDoubleBuffer(& dataFile, & in_Buffer[0]);
-			readDoubleBuffer(& dataFile, & in_Buffer[1]);
-			readDoubleBuffer(& dataFile, & ps_Buffer[0]);
-			readDoubleBuffer(& dataFile, & ps_Buffer[1]);
+			// readDoubleBuffer(& dataFile, & in_Buffer[0]);
+			// readDoubleBuffer(& dataFile, & in_Buffer[1]);
+			// readDoubleBuffer(& dataFile, & ps_Buffer[0]);
+			// readDoubleBuffer(& dataFile, & ps_Buffer[1]);
 	    	dataFile.close();
 	  	}
 	  	else
@@ -415,10 +415,10 @@ struct IceTray : Module {
 		dataFile.write( (char *)& buffers[0][0][0], BUFFER_COUNT * BUFFER_SIZE_MAX * MAX_CHANNELS * sizeof(float) );
 		dataFile.write( (char *)& playbackCrossFadeBuffer[0][0], CROSS_FADE_AMT * MAX_CHANNELS * sizeof(float) );
 		dataFile.write( (char *)& recordCrossFadePreBuffer[0][0], CROSS_FADE_AMT * MAX_CHANNELS * sizeof(float) );
-		writeDoubleBuffer(& dataFile, & in_Buffer[0]);
-		writeDoubleBuffer(& dataFile, & in_Buffer[1]);
-		writeDoubleBuffer(& dataFile, & ps_Buffer[0]);
-		writeDoubleBuffer(& dataFile, & ps_Buffer[1]);
+		// writeDoubleBuffer(& dataFile, & in_Buffer[0]);
+		// writeDoubleBuffer(& dataFile, & in_Buffer[1]);
+		// writeDoubleBuffer(& dataFile, & ps_Buffer[0]);
+		// writeDoubleBuffer(& dataFile, & ps_Buffer[1]);
 		dataFile.close();
 	}
 
@@ -517,8 +517,8 @@ struct IceTray : Module {
 				if(recordBuffer == -1 && bufferLockLevel[bi] == NONE) record_jumpToNextTrack();
 				else if(bi == recordBuffer && bufferLockLevel[bi] != ALL) record_jumpToNextTrack(); 
 
-				if(playbackBuffer == -1 && bufferLockLevel[bi] != NONE) playback_jumpToNextTrack(false);
-				else if(bi == playbackBuffer && bufferLockLevel[bi] == NONE) playback_jumpToNextTrack(false);
+				if(playbackBuffer == -1 && bufferLockLevel[bi] != NONE) playback_jumpToNextTrack(false, false);
+				else if(bi == playbackBuffer && bufferLockLevel[bi] == NONE) playback_jumpToNextTrack(false, false);
 				
 				updateCubeLights();
 			}else if(cubeButtonDown[bi] && !button){
@@ -544,7 +544,7 @@ struct IceTray : Module {
 		float playbackClock = inputs[CLOCK_PLAYBACK_INPUT].getVoltage();
 		if (!playbackClockHigh && playbackClock > 2.0f) {
 			playbackClockHigh = true;
-			playback_jumpToNextTrack(false);
+			playback_jumpToNextTrack(false, false);
 		}else if(playbackClockHigh && playbackClock < 0.1f){
 			playbackClockHigh = false;
 		}
@@ -644,52 +644,25 @@ struct IceTray : Module {
 
 		float output [MAX_CHANNELS] = {0,0};
 		if(playbackBuffer >= 0){
-			int ls = loopSize[playbackBuffer];		
-			int pbi = playbackIndex;
-
-			while(pbi > ls) pbi -= ls;
-			output[0] = buffers[playbackBuffer][pbi][0];
-			output[1] = buffers[playbackBuffer][pbi][1];
-
-			//Note toStart is intentinally calcuated before wrapping
-			int toStart = playbackIndex - fadeInStart;			
-			if(toStart < CROSS_FADE_AMT){
-				float scalar = ((float)toStart/CROSS_FADE_AMT);
-				scalar = clamp(scalar,0.f,1.0f);
-				output[0] *= scalar;
-				output[1] *= scalar;
-			}
-
-			int toEnd = ls - pbi;
-			if(toEnd < CROSS_FADE_AMT){
-				float scalar = ((float)toEnd/CROSS_FADE_AMT);
-				scalar = clamp(scalar,0.f,1.0f);
-				output[0] *= scalar;
-				output[1] *= scalar;
-			}
-
+			getPlaybackOuput(output[0],output[1],playbackIndex);
 			playbackIndex++;
 
 			if(params[PLAYBACK_MODE_PARAM].getValue() == 1){
-				if(playbackIndex >= ls){
-					playback_jumpToNextTrack(false);
+				if(playbackIndex >= loopSize[playbackBuffer]){
+					playback_jumpToNextTrack(false, true);
 				}
 			}
 			if(playbackIndex >= bufferLength){
-				playback_jumpToNextTrack(true);
+				playback_jumpToNextTrack(true, true);
 			}
 		}
 
 		if(playbackCrossFadeBufferIndex < CROSS_FADE_AMT){
 			float crossOut0 = playbackCrossFadeBuffer[playbackCrossFadeBufferIndex][0];
 			float crossOut1 = playbackCrossFadeBuffer[playbackCrossFadeBufferIndex][1];
-			playbackCrossFadeBufferIndex++;
-			float scalar = 1.f-((float)playbackCrossFadeBufferIndex/CROSS_FADE_AMT);
-			scalar = clamp(scalar,0.f,1.0f);
-			crossOut0 *= scalar;
-			crossOut1 *= scalar;
 			output[0] += crossOut0;
 			output[1] += crossOut1;
+			playbackCrossFadeBufferIndex++;
 		}
 
 		for(int ci = 0; ci < MAX_CHANNELS; ci++){
@@ -699,11 +672,43 @@ struct IceTray : Module {
 			highpassFilter[ci].process(output[ci]);
 			output[ci] = highpassFilter[ci].highpass();
 		}
-
 		outputs[LEFT_OUTPUT].setVoltage(output[0]);
 		outputs[RIGHT_OUTPUT].setVoltage(output[1]);
 		feedbackValue[0] = output[0];
 		feedbackValue[1] = output[1];
+	}
+
+	void getPlaybackOuput(float & out0, float & out1, int index){
+		int ls = loopSize[playbackBuffer];		
+		int pbi = index;
+
+		while(pbi > ls) pbi -= ls;
+		float o0 = buffers[playbackBuffer][pbi][0];
+		float o1 = buffers[playbackBuffer][pbi][1];
+
+		//Note toStart is calclauted two ways:
+		//1. before wrapping
+		//2. after wrapping, so the wrapped in segment doesn't clip
+		// int toStart = std::min(index - fadeInStart, pbi);
+
+		int toStart = index - fadeInStart;
+		if(toStart < CROSS_FADE_AMT){
+			float scalar = ((float)toStart/CROSS_FADE_AMT);
+			scalar = clamp(scalar,0.f,1.0f);
+			o0 *= scalar;
+			o1 *= scalar;
+		}
+
+		// int toEnd = ls - pbi;
+		// if(toEnd < CROSS_FADE_AMT){
+		// 	float scalar = ((float)toEnd/CROSS_FADE_AMT);
+		// 	scalar = clamp(scalar,0.f,1.0f);
+		// 	o0 *= scalar;
+		// 	o1 *= scalar;
+		// }
+
+		out0 = o0;
+		out1 = o1;
 	}
 
 	void updateCubeLights(){
@@ -734,10 +739,30 @@ struct IceTray : Module {
 
 	void record_jumpToNextTrack() {
 		if(recordBuffer != -1){
-			loopSize[recordBuffer] = clamp((int)recordIndex - CROSS_FADE_AMT, 0, BUFFER_SIZE_MAX-CROSS_FADE_AMT);
+			loopSize[recordBuffer] = clamp((int)recordIndex, 0, BUFFER_SIZE_MAX-CROSS_FADE_AMT);
+
+			//Cross fade out the tail end of the current buffer
+			for(int ci = 0; ci < CROSS_FADE_AMT; ci++){
+				int i = loopSize[recordBuffer] - ci;
+				if(i >= 0){
+					float scalar = (float)ci/CROSS_FADE_AMT;
+					buffers[recordBuffer][i][0] *= scalar;
+					buffers[recordBuffer][i][1] *= scalar;
+				}
+			}
+
+			//Also fade anything after the current end so the overflow mode doesn't have clicks
+			for(int ci = 0; ci < CROSS_FADE_AMT; ci++){
+				int i = loopSize[recordBuffer] + ci;
+				if(i >= 0){
+					float scalar = (float)ci/CROSS_FADE_AMT;
+					buffers[recordBuffer][i][0] *= scalar;
+					buffers[recordBuffer][i][1] *= scalar;
+				}
+			}
 
 			//If intial recording, copy it over to the buffer 3 down
-			if(recordBuffer < 3){
+			if(recordBuffer < 3 && loopSize[recordBuffer + 3] == 0){
 				int bi = recordBuffer + 3;
 				int ls = loopSize[recordBuffer];
 				loopSize[bi] = ls;
@@ -750,26 +775,28 @@ struct IceTray : Module {
 
 		int freeBuffer = record_nextFreeBuffer();
 		recordBuffer = freeBuffer;
-		recordIndex = recordCrossFadePreBufferIndex - floor(recordCrossFadePreBufferIndex) + CROSS_FADE_AMT;
+		recordIndex = recordCrossFadePreBufferIndex - floor(recordCrossFadePreBufferIndex) + CROSS_FADE_AMT - 1;
 
-		//Copy over cross fade buffer into start of new buffer
+		//Copy the PRE recording buffer into start of new buffer
 		if(recordBuffer != -1){
 			for(int ci = 0; ci < CROSS_FADE_AMT; ci++){
 				int i = 1 + ci + floor(recordCrossFadePreBufferIndex);
 				if(i >= CROSS_FADE_AMT) i -= CROSS_FADE_AMT;
-				buffers[recordBuffer][ci][0] = recordCrossFadePreBuffer[i][0];
-				buffers[recordBuffer][ci][1] = recordCrossFadePreBuffer[i][1];
+				float scalar = (float)ci / CROSS_FADE_AMT;
+				buffers[recordBuffer][ci][0] = recordCrossFadePreBuffer[i][0] * scalar;
+				buffers[recordBuffer][ci][1] = recordCrossFadePreBuffer[i][1] * scalar;
 			}
 		}
 
 		if(playbackBuffer == -1){
-			playback_jumpToNextTrack(true);
+			playback_jumpToNextTrack(true, false);
 		}
 		updateBufferLocks();
 		updateRecordAndPlaybackLights();
 	}
 
-	void playback_jumpToNextTrack(bool forceResetPBI) {
+	//setCurCrossFadeTo0 is true if we've already handled the current frames output and we should set playbackCrossFadeBuffer[0] to 0
+	void playback_jumpToNextTrack(bool forceResetPBI, bool setCurCrossFadeTo0) {
 
 		bool runover = params[PLAYBACK_MODE_PARAM].getValue() == 0;
 
@@ -778,19 +805,29 @@ struct IceTray : Module {
 			int ls = std::min(loopSize[playbackBuffer], BUFFER_SIZE_MAX);
 			for(int ci = 0; ci < CROSS_FADE_AMT; ci++){
 				int i = ci + playbackIndex;
-				if(runover){
-					while(i > ls) i -= ls;
-					playbackCrossFadeBuffer[ci][0] = buffers[playbackBuffer][i][0];
-					playbackCrossFadeBuffer[ci][1] = buffers[playbackBuffer][i][1];
-				}else{
-					if(i < ls){
-						playbackCrossFadeBuffer[ci][0] = buffers[playbackBuffer][i][0];
-						playbackCrossFadeBuffer[ci][1] = buffers[playbackBuffer][i][1];
+				float cxFade0 = 0;
+				float cxFade1 = 0;
+				if(ci > 0 || !setCurCrossFadeTo0){
+					if(runover){
+						//while(i > ls) i -= ls;
+						getPlaybackOuput(cxFade0,cxFade1,i);
 					}else{
-						playbackCrossFadeBuffer[ci][0] = 0;
-						playbackCrossFadeBuffer[ci][1] = 0;
+						if(i < ls){
+							getPlaybackOuput(cxFade0,cxFade1,i);
+						}
+					}
+					float scalar = 1.f-((float)ci/CROSS_FADE_AMT);
+					cxFade0 *= scalar;
+					cxFade1 *= scalar;
+					//Also carry forward any previous crossFade
+					int previousCrossFadeIndex = ci + playbackCrossFadeBufferIndex;
+					if(previousCrossFadeIndex < CROSS_FADE_AMT){
+						cxFade0 += playbackCrossFadeBuffer[previousCrossFadeIndex][0];
+						cxFade1 += playbackCrossFadeBuffer[previousCrossFadeIndex][1];
 					}
 				}
+				playbackCrossFadeBuffer[ci][0] = cxFade0;
+				playbackCrossFadeBuffer[ci][1] = cxFade1;
 			}
 			playbackCrossFadeBufferIndex = 0;
 		}

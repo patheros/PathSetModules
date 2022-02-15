@@ -1,6 +1,13 @@
 
 # Change Log
 
+## v2.1.1
+
+* IceTray
+** Removed all the weird clicking (that I could find)
+** Now correctly saves recordings when patch is saved (wasn't working correctly before)
+
+
 ## v2.1.0
 
 * All Modules now save and load their full state
