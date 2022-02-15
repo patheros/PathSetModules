@@ -389,7 +389,7 @@ struct IceTray : Module {
 		if (dataFile.is_open())
 		{
 			DEBUG("Data file is open");
-	    	for(int ii = 0; ii < 1000; ii++) DEBUG("Loading Buffer Peak %f",buffers[0][ii][0]);
+	    	dataFile.read( (char *)& buffers[0][0][0], BUFFER_COUNT * BUFFER_SIZE_MAX * MAX_CHANNELS * sizeof(float) );
 			dataFile.read( (char *)& playbackCrossFadeBuffer[0][0], CROSS_FADE_AMT * MAX_CHANNELS * sizeof(float) );
 			dataFile.read( (char *)& recordCrossFadePreBuffer[0][0], CROSS_FADE_AMT * MAX_CHANNELS * sizeof(float) );
 			readDoubleBuffer(& dataFile, & in_Buffer[0]);
