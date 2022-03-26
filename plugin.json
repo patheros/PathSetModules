@@ -18,7 +18,7 @@
       "name": "Shifty",
       "description": "Gate shift register with controllable delays. Create generative gate sequences from a single clock.",
       "tags": [
-      	"Clock",
+        "Clock",
         "Clock modulator",
         "Sample and hold"
       ]
@@ -27,13 +27,30 @@
       "slug": "IceTray",
       "name": "IceTray",
       "description": "Speed shifter and tape delay with selective memory. Perform into this and it will never forget your mistakes.",
-      "tags": ["Delay","Recording"]
+      "tags": [
+        "Delay",
+        "Recording",
+        "Granular"
+      ]
     },
     {
       "slug": "AstroVibe",
       "name": "AstroVibe",
       "description": "Three stereo oscillators or LFOs with random waveforms. Explore a universe of unique waveforms.",
-      "tags": ["VCO","LFO","Physical modeling"]
+      "tags": [
+        "VCO",
+        "LFO",
+        "Physical modeling"
+      ]
+    },
+    {
+      "slug": "GlassPane",
+      "name": "GlassPane",
+      "description": "Patchable, branchable, network sequencer. Create a cascading intricate self modulating sequence.",
+      "tags": [
+      	"Sequencer",
+      	"Random",
+      ]
     }
   ]
 }

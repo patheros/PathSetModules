@@ -15,3 +15,4 @@ extern Plugin* pluginInstance;
 extern Model* modelShiftyMod;
 extern Model* modelIceTray;
 extern Model* modelAstroVibe;
+extern Model* modelGlassPane;
