@@ -213,7 +213,7 @@ struct GlassPane : Module {
 		configOutput(CV_OUTPUT, "CV");
 
 		for(int ni = 0; ni < NODE_MAX; ni++){
-			configSwitch<ModeParamQuantity>(MODE_BUTTON_PARAM + ni, 0.f, 2.f, 0.f, "Mode ", std::vector<std::string>{"Cycle","Random","Arpeggiate"});
+			configSwitch<ModeParamQuantity>(MODE_BUTTON_PARAM + ni, 0.f, 2.f, 0.f, "Mode ", std::vector<std::string>{"Cycle","Random","Ratchet"});
 			configParam<CVRangeParamQuantity>(CV_KNOB_PARAM + ni, 0.f, 1.f, 0.5f, "CV", "V");
 			configInput(MODE_TRIGGER_INPUT + ni, "Mode Trigger");
 			for(int ii = 0 ; ii < NODE_IN_MAX; ii ++){
@@ -349,17 +349,12 @@ struct GlassPane : Module {
 			}
 		}
 		if(arpHighEvent){
-			//Hihg Transition
-			resetArpeggiateCounter();
-			setActiveNode(arpeggiateNode);
-			DEBUG("Arp going High. Left:%i",arpeggiateLeft);
-		}
-		if(arpLowEvent){
-			//Low Transition (or End)
+			//High Transition
 			arpeggiateLeft --;
 			if(arpeggiateLeft > 0){
 				resetArpeggiateCounter();
-				DEBUG("Arp going Low. Left:%i",arpeggiateLeft);
+				setActiveNode(arpeggiateNode);
+				DEBUG("Arp going High. Left:%i",arpeggiateLeft);
 			}else{
 				//End arpegiation
 				arpHighEvent = false; //Consume arpHightEvent
@@ -371,6 +366,10 @@ struct GlassPane : Module {
 				}
 				cleanUpArpeggiation();
 			}
+		}
+		if(arpLowEvent){
+			resetArpeggiateCounter();
+			DEBUG("Arp going Low. Left:%i",arpeggiateLeft);
 		}
 		
 
@@ -804,22 +803,22 @@ struct GlassPaneWidget : ModuleWidget {
 			}
 		));
 
-		menu->addChild(createSubmenuItem("Cycle", module->weightedCycle ? "Pyramid" : "Round",
+		menu->addChild(createSubmenuItem("Cycle", module->weightedCycle ? "Weighted" : "Evenly",
 			[=](Menu* menu) {
-				menu->addChild(createMenuLabel("Controls if Cylce steps play once around, or have a pyramid patern."));
-				menu->addChild(createMenuItem("Round", CHECKMARK(module->weightedCycle == false), [module]() { 
+				menu->addChild(createMenuLabel("Controls if Cylce steps play Evenly, or Weighted to output A."));
+				menu->addChild(createMenuItem("Evenly", CHECKMARK(module->weightedCycle == false), [module]() { 
 					module->weightedCycle = false;
 				}));
-				menu->addChild(createMenuItem("Pyramid", CHECKMARK(module->weightedCycle == true), [module]() { 
+				menu->addChild(createMenuItem("Weighted", CHECKMARK(module->weightedCycle == true), [module]() { 
 					module->weightedCycle = true;
 				}));
 			}
 		));
 
-		menu->addChild(createSubmenuItem("Odds", module->weightedOdds ? "Weighted" : "Even",
+		menu->addChild(createSubmenuItem("Odds", module->weightedOdds ? "Weighted" : "Evenly",
 			[=](Menu* menu) {
-				menu->addChild(createMenuLabel("Controls if Random steps are evenly distributed or weighted to output A."));
-				menu->addChild(createMenuItem("Even", CHECKMARK(module->weightedOdds == false), [module]() { 
+				menu->addChild(createMenuLabel("Controls if Random steps are Evenly distributed or Weighted to output A."));
+				menu->addChild(createMenuItem("Evenly", CHECKMARK(module->weightedOdds == false), [module]() { 
 					module->weightedOdds = false;
 				}));
 				menu->addChild(createMenuItem("Weighted", CHECKMARK(module->weightedOdds == true), [module]() { 
@@ -828,9 +827,9 @@ struct GlassPaneWidget : ModuleWidget {
 			}
 		));
 
-		menu->addChild(createSubmenuItem("Arp Speed", ARP_SPEEDS_LABELS[module->arpeggiateSpeed],
+		menu->addChild(createSubmenuItem("Ratchet Speed", ARP_SPEEDS_LABELS[module->arpeggiateSpeed],
 			[=](Menu* menu) {
-				menu->addChild(createMenuLabel("Change note subdvision when at an Arpeggiate step."));
+				menu->addChild(createMenuLabel("Change note subdvision when at an Ratchet step."));
 				for(int i = 0; i < ARPEGGIATE_SPEED_MAX; i++){
 					menu->addChild(createMenuItem(ARP_SPEEDS_LABELS[i], CHECKMARK(module->arpeggiateSpeed == i), [module,i]() { 
 						module->arpeggiateSpeed = i;
