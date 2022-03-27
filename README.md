@@ -152,7 +152,7 @@ Note examples use [other plugins](#other-plugins).
 ## License
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
-All **graphics** in the `res` and `res_source` directories are copyright © [Andrew Hanson](https://github.com/patheros) and licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
+All **graphics** in the `res` and `res_src` directories are copyright © [Andrew Hanson](https://github.com/patheros) and licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
 
 ## Other Plugins
 The [examples patches](https://github.com/patheros/PathSetModules/tree/main/examples) in this repository use these other plugins. They are all free but you will need to subscribe to them in order to load the examples.
