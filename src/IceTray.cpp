@@ -11,19 +11,21 @@ License: GNU GPL-3.0
 #include <iostream>
 #include <fstream>
 
-static const int BUFFER_COUNT = 6;
+#define BUFFER_COUNT 6
 
 //Note this assumes 44.1khz to achive a max cube size of 10 seconds
-static const int ASSUMED_SAMPLE_RATE = 44100;
+#define ASSUMED_SAMPLE_RATE 44100
 
-static const float CROSS_FADE_SECONDS = 0.15f; //In Seconds
-static const int CROSS_FADE_AMT = CROSS_FADE_SECONDS * ASSUMED_SAMPLE_RATE;
+//In Seconds
+#define CROSS_FADE_SECONDS 0.15f 
 
-static const int BUFFER_LENGTH_SECONDS_KNOB_MAX = 10.f;
-static const int BUFFER_LENGTH_SECONDS = BUFFER_LENGTH_SECONDS_KNOB_MAX + CROSS_FADE_SECONDS * 2;
-static const int BUFFER_SIZE_MAX = (BUFFER_LENGTH_SECONDS * ASSUMED_SAMPLE_RATE) + 2;
+#define CROSS_FADE_AMT static_cast<int>(CROSS_FADE_SECONDS * ASSUMED_SAMPLE_RATE)
 
-static const int BUFFER_TAIL_PADDING = 1;
+#define BUFFER_LENGTH_SECONDS_KNOB_MAX 10.f
+#define BUFFER_LENGTH_SECONDS static_cast<int>(BUFFER_LENGTH_SECONDS_KNOB_MAX + CROSS_FADE_SECONDS * 2)
+#define BUFFER_SIZE_MAX static_cast<int>((BUFFER_LENGTH_SECONDS * ASSUMED_SAMPLE_RATE) + 2)
+
+#define BUFFER_TAIL_PADDING 1
 
 static const int READ_PATTERN_NEG [][6] = {
 	{1,1,1,1,1,1},

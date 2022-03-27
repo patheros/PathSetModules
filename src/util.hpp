@@ -1,3 +1,8 @@
+/*
+Copyright: Andrew Hanson
+License: GNU GPL-3.0
+*/
+
 #include <rack.hpp>
 
 json_t* json_bool(bool value);

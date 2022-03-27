@@ -47,6 +47,7 @@
       "slug": "GlassPane",
       "name": "GlassPane",
       "description": "Patchable, branchable, network sequencer. Create a cascading intricate self modulating sequence.",
+      "manualUrl": "https://github.com/patheros/PathSetManuals/blob/main/modules/GlassPane.md",
       "tags": [
       	"Sequencer",
       	"Random"

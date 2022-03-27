@@ -1,3 +1,8 @@
+/*
+Copyright: Andrew Hanson
+License: GNU GPL-3.0
+*/
+
 #include "plugin.hpp"
 #include "util.hpp"
 
