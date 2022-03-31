@@ -6,6 +6,10 @@ License: GNU GPL-3.0
 #include "plugin.hpp"
 #include "util.hpp"
 
+//Disable Debug Macro
+#undef DEBUG
+#define DEBUG(...) {}
+
 #define NODE_MAX 16
 #define NODE_IN_MAX 2
 #define NODE_OUT_MAX 3
@@ -146,6 +150,7 @@ struct GlassPane : Module {
 			int ni = this->paramId - MODE_BUTTON_PARAM;
 			_module->setModeLight(ni);
 			_module->nodes[ni].manualMode = (NodeMode)(int)value;
+			DEBUG("Set Manual Mode on %i to %f",ni,value);
 		}
 	};
 
@@ -178,6 +183,7 @@ struct GlassPane : Module {
 		void dataFromJson(json_t *jobj) {
 			state = json_integer_value(json_object_get(jobj, "state"));
 			manualMode = (NodeMode)json_integer_value(json_object_get(jobj, "manualMode"));
+			DEBUG("Loading Manual Mode from jason as %i",manualMode);
 			triggerSource = (TriggerSource)json_integer_value(json_object_get(jobj, "triggerSource"));
 			arpeggiating = json_bool_value(json_object_get(jobj, "arpeggiating"));
 		}
@@ -290,7 +296,7 @@ struct GlassPane : Module {
 	}
 
 	void dataFromJson(json_t *jobj) override {					
-		json_t *nodesJ = json_object_get(jobj,"arms");
+		json_t *nodesJ = json_object_get(jobj,"nodes");
 		for(int ni = 0; ni < NODE_MAX; ni++){
 			nodes[ni].dataFromJson(json_array_get(nodesJ,ni));
 		}
@@ -386,8 +392,10 @@ struct GlassPane : Module {
 			clockLowEvent = true;
 			for(int ni = 0; ni < NODE_MAX; ni++){
 				nodes[ni].state = NO_STATE;
-				params[MODE_BUTTON_PARAM + ni].setValue(nodes[ni].manualMode);
-				setModeLight(ni);//I'm not sure why this is needed but it seems to be
+				DEBUG("node %i manualMode:%i mode:%f",ni,nodes[ni].manualMode,params[MODE_BUTTON_PARAM + ni].getValue());
+				params[MODE_BUTTON_PARAM + ni].setValue((float)(int)nodes[ni].manualMode);
+				DEBUG("node %i after mode:%f",ni,params[MODE_BUTTON_PARAM + ni].getValue());
+				setModeLight(ni);//setValue on param doesn't trigger setValue on ParamQuantity, so this is needed here
 				clearNodeOutputs(ni);
 				updateNodeLights(ni);
 			}
@@ -743,14 +751,6 @@ struct WhiteKnob : RoundKnob {
 		bg->setSvg(APP->window->loadSvg(asset::plugin(pluginInstance,"res/WhiteKnob_bg.svg")));
 	}
 };
-
-template <typename TBase = rack::app::Switch>
-struct ModeSwitch : TBase {
-	ModeSwitch() {
-		this->momentary = false;
-	}
-};
-
 
 struct GlassPaneWidget : ModuleWidget {
 	GlassPaneWidget(GlassPane* module) {

@@ -5,6 +5,14 @@ License: GNU GPL-3.0
 
 #include <rack.hpp>
 
+template <typename TBase = rack::app::Switch>
+struct ModeSwitch : TBase {
+	ModeSwitch() {
+		this->momentary = false;
+		this->latch = true;
+	}
+};
+
 json_t* json_bool(bool value);
 #define json_bool_value(X) json_is_true(X)
 
