@@ -1,6 +1,11 @@
 
 # Change Log
 
+## v2.2.0
+
+* GlassPane - New Module!
+  * Patchable, branchable, network sequencer. Create a cascading intricate self modulating sequence.
+
 ## v2.1.1
 
 * IceTray
