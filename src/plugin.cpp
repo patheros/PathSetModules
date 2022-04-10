@@ -13,6 +13,7 @@ void init(Plugin* p) {
 
 	// Add modules here
 	p->addModel(modelShiftyMod);
+	p->addModel(modelShiftyExpander);
 	p->addModel(modelIceTray);
 	p->addModel(modelAstroVibe);
 	p->addModel(modelGlassPane);

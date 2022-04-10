@@ -5,8 +5,8 @@ License: GNU GPL-3.0
 
 #include "plugin.hpp"
 #include "util.hpp"
+#include "shifty.hpp"
 
-#define NUM_ROWS 7
 #define HIT_QUEUE_BASE_SIZE 16
 #define HIT_QUEUE_SCALAR HIT_QUEUE_BASE_SIZE - 1
 #define HIT_QUEUE_FULL_SIZE HIT_QUEUE_BASE_SIZE * 4
@@ -66,6 +66,8 @@ struct ShiftyMod : Module {
 	// float delay_postSaH [NUM_ROWS] = {};
 
 	bool hitQueue [HIT_QUEUE_FULL_SIZE] = {}; 
+
+	ShiftyExpanderBridge bridge = {};
 
 	ShiftyMod() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -179,6 +181,11 @@ struct ShiftyMod : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
+
+		if (rightExpander.module && rightExpander.module->model == modelShiftyExpander) {
+			bridge = static_cast<ShiftyExpanderBase*>(rightExpander.module)->bridge;
+		}
+
 		bool hitEvent = false;
 		bool clockEvent = false;
 		bool sampleAndHoldEvent = false;
@@ -191,7 +198,7 @@ struct ShiftyMod : Module {
 			clock = inputs[CLOCK_INPUT].getVoltage();
 		}else{
 			//Internal Clock
-			internalClock += args.sampleTime / 60.f * params[CLOCK_RATE_PARAM].getValue();
+			internalClock += args.sampleTime / 60.f * (params[CLOCK_RATE_PARAM].getValue() + bridge.clockRate);
 			while(internalClock > 1) internalClock--;
 			clock = internalClock > 0.5 ? 10 : 0;
 		}
@@ -203,7 +210,7 @@ struct ShiftyMod : Module {
 			clockEvent = true;
 
 			clockDividerCount++;
-			float clockDividerValue = floor(params[CLOCK_DIVIDER_PARAM].getValue());
+			float clockDividerValue = floor(params[CLOCK_DIVIDER_PARAM].getValue() + bridge.clockDivider);
 			if(clockDividerCount >= clockDividerValue){
 				sampleAndHoldEvent = true;
 				clockDividerCount = 0;
@@ -240,7 +247,7 @@ struct ShiftyMod : Module {
 
 		//Compute Hits 
 		if(clockEvent || hitEvent){
-			float rampKnob = params[RAMP_PARAM].getValue();
+			float rampKnob = params[RAMP_PARAM].getValue() + bridge.ramp;
 			for(int row = 0; row < NUM_ROWS; row ++){				
 				//Compute Delay	
 				float delay;
@@ -274,7 +281,7 @@ struct ShiftyMod : Module {
 				//Apply Echo
 				bool hitPreEcho = hit;
 				{
-					float echo = params[ECHO_PARAMS + row].getValue();
+					float echo = params[ECHO_PARAMS + row].getValue() + bridge.echo[row];
 					if(!hit && echo > 0.f){
 						int idx = (int)floor(delay * (1.f + (abs(1.f - echo * 2.f))) * HIT_QUEUE_SCALAR);
 						idx = idx % HIT_QUEUE_FULL_SIZE;
@@ -300,7 +307,7 @@ struct ShiftyMod : Module {
 				//Apply Mutes
 				bool hitPreMute = hit;
 				{					
-					float mute = params[MUTE_PARAMS + row].getValue();
+					float mute = params[MUTE_PARAMS + row].getValue() + bridge.mute[row];
 					bool prevHit = prevHitPreMute[row];
 					prevHitPreMute[row] = hit;
 					if(hit){
@@ -339,7 +346,7 @@ struct ShiftyMod : Module {
 		}
 
 		if(sampleAndHoldEvent){			
-			float sampleAndHold = params[SAMPLE_AND_HOLD_PARAM].getValue();
+			float sampleAndHold = params[SAMPLE_AND_HOLD_PARAM].getValue() + bridge.sample_and_hold;
 			for(int row = 0; row < NUM_ROWS; row ++){
 				//Roll Sample and Hold
 				//Comes after main logic because otherwise it will prevent the new delay value from being computed
@@ -359,6 +366,7 @@ struct ShiftyMod : Module {
 			outputs[OUT_OUTPUTS + row].setVoltage((clockHigh && on) ? 10.f : 0);
 		}
 	}
+
 };
 
 template <typename TBase>
@@ -430,6 +438,39 @@ struct ShiftyModWidget : ModuleWidget {
 			addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(73.524, y)), module, ShiftyMod::OUT_OUTPUTS + row));
 		}
 	}
+
+	void appendContextMenu(Menu* menu) override {
+		//auto module = dynamic_cast<ShiftyMod*>(this->module);
+
+		menu->addChild(new MenuEntry); //Blank Row
+		menu->addChild(createMenuLabel("Shifty"));
+		
+		menu->addChild(createMenuItem("Add Expander (right 8HP)", "", 
+			[=]{
+				addExpander();
+			}
+		));
+	}
+
+	void addExpander(){
+		Vec myPos = this->box.pos;
+		Vec expanderPos = myPos.plus(Vec(this->box.size.x,0));
+
+		Model* model = pluginInstance->getModel("ShiftyExpander");
+		Module* module = model->createModule();
+		APP->engine->addModule(module);
+		
+		ModuleWidget *moduleWidget = model->createModuleWidget(module);
+	 	APP->scene->rack->setModulePosForce(moduleWidget, expanderPos);
+	 	APP->scene->rack->addModule(moduleWidget);
+
+		history::ModuleAdd *h = new history::ModuleAdd;
+		h->name = "create expander module";
+		h->setModule(moduleWidget);
+		APP->history->push(h);
+	}
+
+	
 };
 
 Model* modelShiftyMod = createModel<ShiftyMod, ShiftyModWidget>("ShiftyMod");

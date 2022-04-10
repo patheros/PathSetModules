@@ -13,6 +13,8 @@ extern Plugin* pluginInstance;
 
 // Declare each Model, defined in each module source file
 extern Model* modelShiftyMod;
+extern Model* modelShiftyExpander;
 extern Model* modelIceTray;
 extern Model* modelAstroVibe;
 extern Model* modelGlassPane;
+
