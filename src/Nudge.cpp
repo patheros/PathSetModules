@@ -53,6 +53,22 @@ struct Nudge : Module {
 		float amt;
 		float vel;
 		float delta;
+
+		json_t *dataToJson(){
+			json_t *jobj = json_object();
+
+			json_object_set_new(jobj, "amt", json_real(amt));
+			json_object_set_new(jobj, "vel", json_real(vel));
+			json_object_set_new(jobj, "delta", json_real(delta));
+
+			return jobj;
+		}
+
+		void dataFromJson(json_t *jobj) {			
+			amt = json_real_value(json_object_get(jobj, "amt"));
+			vel = json_real_value(json_object_get(jobj, "vel"));
+			delta = json_real_value(json_object_get(jobj, "delta"));
+		}
 	};
 
 	Line lines [LINE_MAX];
@@ -78,7 +94,7 @@ struct Nudge : Module {
 		configParam(VEL_AV_PARAM, -1.f, 1.f, 0.f, "Velocity Attenuverter", "%", 0.f, 100.f, 0.f);
 		configInput(VEL_CV_INPUT, "");
 
-		configSwitch(OUTPUT_RANGE_PARAM, 0.f, 2.f, 1.f, "Range", std::vector<std::string>{"Unipolar - Negative","Bipolar","Unipolar - Positive"});
+		configSwitch(OUTPUT_RANGE_PARAM, 0.f, 2.f, 1.f, "Range", std::vector<std::string>{"Negative - Unipolar","Bipolar","Positive - Unipolar"});
 		configButton(NUDGE_BUTTON_PARAM, "Nudge");
 
 		configInput(CV_IN_1_INPUT, "CV 1");
@@ -114,35 +130,29 @@ struct Nudge : Module {
 		nudging = 0;
 	}
 
-	// json_t *dataToJson() override{
-	// 	json_t *jobj = json_object();
+	json_t *dataToJson() override{
+		json_t *jobj = json_object();
 
-	// 	json_object_set_new(jobj, "version", json_string(PLUGIN_VERSION_STRING));
+		json_object_set_new(jobj, "version", json_integer(1));
 			
-	// 	json_t *armsJ = json_array();
-	// 	for(int ai = 0; ai < ARM_COUNT; ai++){
-	// 		json_array_insert_new(armsJ, ai, arms[ai].dataToJson());
-	// 	}
-	// 	json_object_set_new(jobj, "arms", armsJ);
+		json_t *linesJ = json_array();
+		for(int li = 0; li < LINE_MAX; li++){
+			json_array_insert_new(linesJ, li, lines[li].dataToJson());
+		}
+		json_object_set_new(jobj, "lines", linesJ);
 
-	// 	json_object_set_new(jobj, "running", json_bool(running));
-	// 	json_object_set_new(jobj, "waveArms", json_bool(waveArms));
-	// 	json_object_set_new(jobj, "speedMultiplier", json_real(speedMultiplier));
-	// 	json_object_set_new(jobj, "curSeqTime", json_real(curSeqTime));
+		json_object_set_new(jobj, "nudging", json_integer(nudging));
 
-	// 	return jobj;
-	// }
+		return jobj;
+	}
 
-	// void dataFromJson(json_t *jobj) override {			
-	// 	json_t *armsJ = json_object_get(jobj,"arms");
-	// 	for(int ai = 0; ai < ARM_COUNT; ai++){
-	// 		arms[ai].dataFromJson(json_array_get(armsJ,ai));
-	// 	}
-	// 	running = json_bool_value(json_object_get(jobj, "running"));
-	// 	waveArms = json_bool_value(json_object_get(jobj, "waveArms"));
-	// 	speedMultiplier = json_real_value(json_object_get(jobj, "speedMultiplier"));
-	// 	curSeqTime = json_real_value(json_object_get(jobj, "curSeqTime"));
-	// }
+	void dataFromJson(json_t *jobj) override {			
+		json_t *linesJ = json_object_get(jobj,"lines");
+		for(int li = 0; li < LINE_MAX; li++){
+			lines[li].dataFromJson(json_array_get(linesJ,li));
+		}
+		nudging = json_integer_value(json_object_get(jobj, "nudging"));
+	}
 
 	void process(const ProcessArgs& args) override {
 
@@ -242,21 +252,21 @@ struct NudgeWidget : ModuleWidget {
 		}
 
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.318, 17.194)), module, Nudge::CV_IN_1_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.369, 26.924)), module, Nudge::CV_IN_2_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(11.348, 27.177)), module, Nudge::CV_IN_2_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(16.056, 37.113)), module, Nudge::CV_IN_3_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(12.534, 47.816)), module, Nudge::CV_IN_4_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(6.437, 57.638)), module, Nudge::CV_IN_5_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.239, 97.1)), module, Nudge::SLEW_CV_INPUT));
-		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(18.087, 100.69)), module, Nudge::SIZE_CV_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(17.822, 100.69)), module, Nudge::SIZE_CV_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(28.406, 104.28)), module, Nudge::MAX_CV_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(38.989, 107.87)), module, Nudge::VEL_CV_INPUT));
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(22.86, 114.315)), module, Nudge::NUDGE_TRIGGER_INPUT));
 
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(32.806, 14.104)), module, Nudge::CV_OUT_1_OUTPUT));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(37.993, 25.881)), module, Nudge::CV_OUT_2_OUTPUT));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(40.639, 38.759)), module, Nudge::CV_OUT_3_OUTPUT));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(36.944, 50.692)), module, Nudge::CV_OUT_4_OUTPUT));
-		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(31.58, 60.827)), module, Nudge::CV_OUT_5_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(29.051186, 8.5919476)), module, Nudge::CV_OUT_1_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(36.729866, 23.027697)), module, Nudge::CV_OUT_2_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(40.810059, 37.993649)), module, Nudge::CV_OUT_3_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(35.072895, 53.077431)), module, Nudge::CV_OUT_4_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(27.557224, 66.25251)), module, Nudge::CV_OUT_5_OUTPUT));
 	}
 };
 
