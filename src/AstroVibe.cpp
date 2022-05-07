@@ -358,7 +358,7 @@ struct AstroVibe : Module {
 				}
 			}
 			{
-				float is = inputs[TRAVEL_TRIG_1_INPUT].getVoltageSum();
+				float is = inputs[TRAVEL_TRIG_1_INPUT + ri].getVoltageSum();
 				bool was = rows[ri].resetTriggerHigh;
 				if(is > 2.0f && !was){
 					rows[ri].resetTriggerHigh = true;
