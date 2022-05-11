@@ -18,7 +18,7 @@ License: GNU GPL-3.0
 #define NODE_MODE_MAX 3
 #define CLOCK_HISTORY_MAX 24 //How many clock lengths to store from the past and use when arpeggiating
 
-#define CVRANGE_MAX 8
+#define CVRANGE_MAX 12
 enum CVRange{
 	Bipolar_10,
 	Bipolar_5,
@@ -28,18 +28,29 @@ enum CVRange{
 	Unipolar_5,
 	Unipolar_3,
 	Unipolar_1,
+	Bipolar_4,
+	Bipolar_2,
+	Unipolar_4,
+	Unipolar_2,
 };
 
-const std::string CVRange_Lables [] = {
-	"+/-10V",
-	"+/-5V",
-	"+/-3V",
-	"+/-1V",
-	"0V-10V",
-	"0V-5V",
-	"0V-3V",
-	"0V-1V",
+const std::string CVRange_Lables [CVRANGE_MAX] = {
+	"+/-10V", //0
+	"+/-5V", //1
+	"+/-3V", //2
+	"+/-1V", //3
+	"0V-10V", //4
+	"0V-5V", //5
+	"0V-3V", //6
+	"0V-1V", //7
+	"+/-4V", //8
+	"+/-2V", //9
+	"0V-4V", //10
+	"0V-2V", //11
+	
 };
+
+const int CVRange_Order [CVRANGE_MAX] = {0,1,8,2,9,3,4,5,10,6,11,7};
 
 float mapCVRange(float in, CVRange range){
 	switch(range){
@@ -59,6 +70,14 @@ float mapCVRange(float in, CVRange range){
 			return in * 3.f;
 		case Unipolar_1:
 			return in * 1.f;
+		case Bipolar_4:
+			return in * 8.f - 4.f;
+		case Bipolar_2:
+			return in * 4.f - 2.f;
+		case Unipolar_4:
+			return in * 4.f;
+		case Unipolar_2:
+			return in * 2.f;
 	}
 	return 0;
 }
@@ -66,7 +85,7 @@ float mapCVRange(float in, CVRange range){
 float invMapCVRange(float in, CVRange range){
 	switch(range){
 		case Bipolar_10:
-			return (in + 10.f) / 10.f;
+			return (in + 10.f) / 20.f;
 		case Bipolar_5:
 			return (in + 5.f) / 10.f;
 		case Bipolar_3:
@@ -81,6 +100,14 @@ float invMapCVRange(float in, CVRange range){
 			return in / 3.f;
 		case Unipolar_1:
 			return in / 1.f;
+		case Bipolar_4:
+			return (in + 4.f) / 8.f;
+		case Bipolar_2:
+			return (in + 2.f) / 4.f;
+		case Unipolar_4:
+			return in / 4.f;
+		case Unipolar_2:
+			return in / 2.f;
 	}
 	return 0;
 }
@@ -801,8 +828,9 @@ struct GlassPaneWidget : ModuleWidget {
 		menu->addChild(createSubmenuItem("Range", CVRange_Lables[module->range],
 			[=](Menu* menu) {
 				for(int i = 0; i < CVRANGE_MAX; i++){
-					menu->addChild(createMenuItem(CVRange_Lables[i], CHECKMARK(module->range == i), [module,i]() { 
-						module->range = (CVRange)i;
+					int ri = CVRange_Order[i];
+					menu->addChild(createMenuItem(CVRange_Lables[ri], CHECKMARK(module->range == ri), [module,ri]() { 
+						module->range = (CVRange)ri;
 					}));
 				}
 			}
