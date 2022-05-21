@@ -8,8 +8,8 @@ License: GNU GPL-3.0
 #include "shifty.hpp"
 
 #define HIT_QUEUE_BASE_SIZE 16
-#define HIT_QUEUE_SCALAR HIT_QUEUE_BASE_SIZE - 1
-#define HIT_QUEUE_FULL_SIZE HIT_QUEUE_BASE_SIZE * 4
+#define HIT_QUEUE_SCALAR (HIT_QUEUE_BASE_SIZE - 1)
+#define HIT_QUEUE_FULL_SIZE (HIT_QUEUE_BASE_SIZE * 4)
 
 #define MUTE_FILTER_SIZE 24
 #define MUTE_FILTER_COUNT 693
@@ -111,6 +111,8 @@ struct ShiftyMod : Module {
 		}
 
 		memset(hitQueue, 0, sizeof hitQueue);
+
+		bridge = ShiftyExpanderBridge();
 	}
 
 	json_t *dataToJson() override {
