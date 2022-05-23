@@ -2,6 +2,7 @@
 #include "util.hpp"
 
 #define LINE_MAX 5
+#define MIN_VOLTAGE 0.01f
 
 struct Nudge : Module {
 	enum ParamId {
@@ -15,6 +16,7 @@ struct Nudge : Module {
 		VEL_AV_PARAM,
 		OUTPUT_RANGE_PARAM,
 		NUDGE_BUTTON_PARAM,
+		INPUT_CV_MODE_PARAM,
 		PARAMS_LEN
 	};
 	enum InputId {
@@ -40,6 +42,11 @@ struct Nudge : Module {
 	};
 	enum LightId {
 		LIGHTS_LEN
+	};
+
+	enum InCVMode {
+		OFFSET,
+		CHANCE,
 	};
 
 	//Non Persisted Data
@@ -82,11 +89,11 @@ struct Nudge : Module {
 		configParam(SLEW_AV_PARAM, -1.f, 1.f, 0.f, "Slew Attenuverter", "%", 0.f, 100.f, 0.f);
 		configInput(SLEW_CV_INPUT, "Slew CV");
 
-		configParam(SIZE_PARAM, 0.f, 5.f, 2.5f, "Step", " V");
+		configParam(SIZE_PARAM, MIN_VOLTAGE, 5.f, 2.5f, "Step", " V");
 		configParam(SIZE_AV_PARAM, -1.f, 1.f, 0.f, "Step Attenuverter", "%", 0.f, 100.f, 0.f);
 		configInput(SIZE_CV_INPUT, "Step CV");
 
-		configParam(MAX_PARAM, 0.f, 10.f, 5.f, "Range", " V");
+		configParam(MAX_PARAM, MIN_VOLTAGE, 10.f, 5.f, "Range", " V");
 		configParam(MAX_AV_PARAM, -1.f, 1.f, 0.f, "Range Attenuverter", "%", 0.f, 100.f, 0.f);
 		configInput(MAX_CV_INPUT, "Range CV");
 
@@ -96,6 +103,7 @@ struct Nudge : Module {
 
 		configSwitch(OUTPUT_RANGE_PARAM, 0.f, 2.f, 1.f, "Range", std::vector<std::string>{"Negative - Unipolar","Bipolar","Positive - Unipolar"});
 		configButton(NUDGE_BUTTON_PARAM, "Nudge");
+		configSwitch(INPUT_CV_MODE_PARAM, 0.f, 1.f, 0.f, "Input CV Mode", std::vector<std::string>{"Offset Ouput","Chance To Nudge"});
 
 		configInput(CV_IN_1_INPUT, "CV 1");
 		configInput(CV_IN_2_INPUT, "CV 2");
@@ -110,6 +118,12 @@ struct Nudge : Module {
 		configOutput(CV_OUT_3_OUTPUT, "CV 3");
 		configOutput(CV_OUT_4_OUTPUT, "CV 4");
 		configOutput(CV_OUT_5_OUTPUT, "CV 5");
+
+		configBypass(CV_IN_1_INPUT,CV_OUT_1_OUTPUT);
+		configBypass(CV_IN_2_INPUT,CV_OUT_2_OUTPUT);
+		configBypass(CV_IN_3_INPUT,CV_OUT_3_OUTPUT);
+		configBypass(CV_IN_4_INPUT,CV_OUT_4_OUTPUT);
+		configBypass(CV_IN_5_INPUT,CV_OUT_5_OUTPUT);
 
 		initalize();
 	}
@@ -163,25 +177,33 @@ struct Nudge : Module {
 			nudgeEvent = true;
 
 		float max_nudge = params[MAX_PARAM].getValue() + params[MAX_AV_PARAM].getValue() * inputs[MAX_CV_INPUT].getVoltage(); 
-		if(max_nudge < 0) max_nudge = 0;
+		if(max_nudge < MIN_VOLTAGE) max_nudge = MIN_VOLTAGE;
+
+		InCVMode inputCVMode = static_cast<InCVMode>(params[INPUT_CV_MODE_PARAM].getValue());
 
 		if(nudgeEvent){
 			float slew = params[SLEW_PARAM].getValue() + params[SLEW_AV_PARAM].getValue() * inputs[SLEW_CV_INPUT].getVoltage(); 
 			float velocity = params[VEL_PARAM].getValue() + params[VEL_AV_PARAM].getValue() * inputs[VEL_CV_INPUT].getVoltage() / 5.f; 
 			
-			float size = params[SIZE_PARAM].getValue() + params[SIZE_AV_PARAM].getValue() * inputs[SIZE_CV_INPUT].getVoltage(); 
-			if(size < 0) size = 0;
+			float size = params[SIZE_PARAM].getValue() + params[SIZE_AV_PARAM].getValue() * inputs[SIZE_CV_INPUT].getVoltage();
+			if(size < MIN_VOLTAGE) size = MIN_VOLTAGE;
+			size = size / max_nudge;
 
 			nudging = std::floor(args.sampleRate * slew);
 			if(nudging < 1) nudging = 1;
 
 			for(int li = 0; li < LINE_MAX; li++){
+				if(inputCVMode == InCVMode::CHANCE){
+					//Normal odds depend on the row. They are 10%, 30%, 50%, 70%, 90%
+					float odds = inputs[CV_IN_1_INPUT + li].getNormalVoltage(1 + 2 * li) / 10.f;
+					if(rack::random::uniform() > odds) continue;
+				}
 				Line & line = lines[li];
 				float offset = 0;
-				offset = line.amt * velocity;
+				offset = line.vel * velocity;
 				float prev_amt = line.amt;
-				if(prev_amt > max_nudge) offset = -1;
-				if(prev_amt < -max_nudge) offset = 1;
+				if(prev_amt > 1) offset = -1;
+				if(prev_amt < -1) offset = 1;
 				float fullDelta = size * (rack::random::uniform() * 2 - 1 + offset);
 				line.delta = fullDelta / (float)nudging;
 				if(fullDelta > 0){
@@ -198,15 +220,15 @@ struct Nudge : Module {
 			nudging --;
 
 			for(int li = 0; li < LINE_MAX; li++){
-				lines[li].amt += lines[li].delta;
+				float amt = lines[li].amt + lines[li].delta;
+				lines[li].amt = clamp(amt,-1.f,1.f);
 			}
 		}
 
 		int range = static_cast<int>(params[OUTPUT_RANGE_PARAM].getValue());
 
 		for(int li = 0; li < LINE_MAX; li++){
-			float value = inputs[CV_IN_1_INPUT + li].getVoltage();
-			float nudge = clamp(lines[li].amt,-max_nudge,max_nudge);
+			float nudge = clamp(lines[li].amt,-1.f,1.f);
 			switch(range){
 				case 0:
 					nudge = -std::abs(nudge);
@@ -218,7 +240,11 @@ struct Nudge : Module {
 					nudge = std::abs(nudge);
 					break;
 			}
-			value += nudge;
+			float value = nudge * max_nudge;
+			if(inputCVMode == InCVMode::OFFSET){
+				value += clamp(inputs[CV_IN_1_INPUT + li].getVoltage(),-10.f,10.f);
+			}
+
 			outputs[CV_OUT_1_OUTPUT + li].setVoltage(value);
 		}
 	}
@@ -244,6 +270,7 @@ struct NudgeWidget : ModuleWidget {
 		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(38.989, 89.158)), module, Nudge::VEL_PARAM));
 		addParam(createParamCentered<Trimpot>(mm2px(Vec(38.989, 98.514)), module, Nudge::VEL_AV_PARAM));
 		addParam(createParamCentered<CKSSThree>(mm2px(Vec(42.184, 70.905)), module, Nudge::OUTPUT_RANGE_PARAM));
+		addParam(createParamCentered<CKSS>(mm2px(Vec(3.6160057, 39.306164)), module, Nudge::INPUT_CV_MODE_PARAM));
 		{
 			CKD6 * button = createParamCentered<CKD6>(mm2px(Vec(12.415, 113.447)), module, Nudge::NUDGE_BUTTON_PARAM);
 			button->momentary = true;

@@ -17,6 +17,7 @@
       "slug": "ShiftyMod",
       "name": "Shifty",
       "description": "Gate shift register with controllable delays. Create generative gate sequences from a single clock.",
+      "manualUrl": "https://github.com/patheros/PathSetManuals/blob/main/modules/Shifty.md",
       "tags": [
         "Clock",
         "Clock modulator",
@@ -27,6 +28,7 @@
       "slug": "IceTray",
       "name": "IceTray",
       "description": "Speed shifter and tape delay with selective memory. Perform into this and it will never forget your mistakes.",
+      "manualUrl": "https://github.com/patheros/PathSetManuals/blob/main/modules/IceTray.md",
       "tags": [
         "Delay",
         "Recording",
@@ -37,6 +39,7 @@
       "slug": "AstroVibe",
       "name": "AstroVibe",
       "description": "Three stereo oscillators or LFOs with random waveforms. Explore a universe of unique waveforms.",
+      "manualUrl": "https://github.com/patheros/PathSetManuals/blob/main/modules/AstroVibe.md",
       "tags": [
         "VCO",
         "LFO",
@@ -58,13 +61,16 @@
       "name": "ShiftyExpander",
       "hidden": true,
       "description": "",
+      "manualUrl": "https://github.com/patheros/PathSetManuals/blob/main/modules/Shifty.md",
       "tags": []
     },
     {
       "slug": "Nudge",
       "name": "Nudge",
-      "description": "",
-      "tags": []
+      "description": "Modulation generator that lets you randomly nudge the modulations whenever you want.",
+      "tags": [
+      	"Random"
+      ]
     }
   ]
 }

@@ -1,6 +1,19 @@
 
 # Change Log
 
+## v2.3.0
+
+* Nudge - New Module!
+  * Generate five modulation signals that can be nudged to new values at the press of a button.
+* Shifty
+  * Now has an Expander
+  * Fixed bug causing delay the Ramp parameter to be wrong. Now correctly delays by 1 clock per row when ramp is set to 1.
+* AstroVibe
+  * Second and Third Input Trigger now works [#1](https://github.com/patheros/PathSetModules/issues/1)
+* GlassPane
+  * Added more Voltage Ranges [#2](https://github.com/patheros/PathSetModules/issues/2)
+
+
 ## v2.2.0
 
 * GlassPane - New Module!
