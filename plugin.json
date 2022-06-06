@@ -68,6 +68,7 @@
       "slug": "Nudge",
       "name": "Nudge",
       "description": "Modulation generator that lets you randomly nudge the modulations whenever you want.",
+      "manualUrl": "https://github.com/patheros/PathSetManuals/blob/main/modules/Nudge.md",
       "tags": [
       	"Random"
       ]
