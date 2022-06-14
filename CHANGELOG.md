@@ -1,6 +1,15 @@
 
 # Change Log
 
+## v2.3.1
+* IceTray
+** Fixed crash when completely froze, i.e. black.
+* Nudge
+** Added Direct Link to Manual.
+* Shifty
+** Right Click Menu now won't let you add an expander if there is already one attached.
+
+
 ## v2.3.0
 
 * Nudge - New Module!
