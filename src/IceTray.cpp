@@ -790,7 +790,9 @@ struct IceTray : Module {
 			}
 		}
 
-		if(playbackBuffer == -1){
+		if(playbackBuffer == -1 && recordBuffer != -1){
+			//If we don't hve a playback buffer, look for one
+			//But only do this if we do have a recordBuffer, otherwise we might get into an infinate loop
 			playback_jumpToNextTrack(true, false);
 		}
 		updateBufferLocks();
