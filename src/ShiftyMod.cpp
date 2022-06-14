@@ -447,11 +447,15 @@ struct ShiftyModWidget : ModuleWidget {
 		menu->addChild(new MenuEntry); //Blank Row
 		menu->addChild(createMenuLabel("Shifty"));
 		
-		menu->addChild(createMenuItem("Add Expander (right 8HP)", "", 
-			[=]{
-				addExpander();
-			}
-		));
+		if(module->rightExpander.module && module->rightExpander.module->model == modelShiftyExpander){
+			menu->addChild(createMenuLabel("Expander already attached."));
+		}else{
+			menu->addChild(createMenuItem("Add Expander (right 8HP)", "", 
+				[=]{
+					addExpander();
+				}
+			));
+		}
 	}
 
 	void addExpander(){
