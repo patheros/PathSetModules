@@ -963,8 +963,8 @@ struct IceTrayWidget : ModuleWidget {
 		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(24.892, 48.457)), module, IceTray::SPEED_NUM_PARAM));
-		addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(24.759, 84.597)), module, IceTray::SPEED_DENOM_PARAM));
+		addParam(createParamCentered<RotarySwitch<RoundBigBlackKnob>>(mm2px(Vec(24.892, 48.457)), module, IceTray::SPEED_NUM_PARAM));
+		addParam(createParamCentered<RotarySwitch<RoundBigBlackKnob>>(mm2px(Vec(24.759, 84.597)), module, IceTray::SPEED_DENOM_PARAM));
 		addParam(createParamCentered<RoundBigBlackKnob>(mm2px(Vec(95.815, 70.543)), module, IceTray::FROST_PARAM));
 
 		addParam(createParamCentered<RoundSmallBlackKnob>(mm2px(Vec(38.803, 23.035)), module, IceTray::RECORD_LENGTH_PARAM));

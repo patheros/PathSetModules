@@ -5,6 +5,22 @@ License: GNU GPL-3.0
 
 #include <rack.hpp>
 
+template <typename TBase>
+struct RotarySwitch : TBase {
+	RotarySwitch() {
+		this->snap = true;
+		this->smooth = false;
+	}
+	
+	// handle the manually entered values
+	void onChange(const event::Change &e) override {
+		
+		SvgKnob::onChange(e);
+		
+		this->getParamQuantity()->setValue(roundf(this->getParamQuantity()->getValue()));
+	}
+};
+
 template <typename TBase = rack::app::Switch>
 struct ModeSwitch : TBase {
 	ModeSwitch() {
