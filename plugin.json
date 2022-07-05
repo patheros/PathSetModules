@@ -72,6 +72,16 @@
       "tags": [
       	"Random"
       ]
+    },
+    { 
+      "slug": "OneShot",
+      "name": "OneShot",
+      "description": "One-shot Sequencer that can be daisy-chained with other sequencers or more OneShots.",
+      "manualUrl": "https://github.com/patheros/PathSetManuals/blob/main/modules/OneShot.md",
+      "tags": [
+      	"Sequencer",
+      	"Random"
+      ]
     }
   ]
 }
