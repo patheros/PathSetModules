@@ -59,8 +59,7 @@
     {
       "slug": "ShiftyExpander",
       "name": "ShiftyExpander",
-      "hidden": true,
-      "description": "",
+      "description": "Expander for Shifty. Adds CV and Atenuverters for all the knobs on Shifty.",
       "manualUrl": "https://github.com/patheros/PathSetManuals/blob/main/modules/Shifty.md",
       "tags": []
     },
