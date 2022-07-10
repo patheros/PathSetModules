@@ -74,6 +74,7 @@ struct OneShot : Module {
 		configSwitch(STABLE_PARAM, 0.f, 1.f, 0.f, "Stable", std::vector<std::string>{"Stable","Unstable"});
 		configParam(CHANCE_PARAM, 0.f, 1.f, 0.f, "Random", "%", 0.f, 100.f, 0.f);
 		configParam(HEAT_PARAM, 0.f, 1.f, 0.f, "Heat", "%", 0.f, 100.f, 0.f);
+		configButton(START_BTN_PARAM, "Start");
 		configInput(START_INPUT, "Start");
 		configInput(CLOCK_INPUT, "Clock");
 		configInput(GATE_IN_INPUT, "Gate");
@@ -82,6 +83,8 @@ struct OneShot : Module {
 		configOutput(ACTIVE_GATE_OUTPUT, "Active Gate");
 		configOutput(GATE_OUT_OUTPUT, "Gate");
 		configOutput(CV_OUT_OUTPUT, "CV");
+		configBypass(GATE_IN_INPUT,GATE_OUT_OUTPUT);
+		configBypass(CV_IN_INPUT,CV_OUT_OUTPUT);
 		initalize();
 	}
 
@@ -170,33 +173,42 @@ struct OneShot : Module {
 			}
 
 			int seqLengthBig = seqLength + (stable ? 0 : 1);
-			int stableNote = static_cast<int>(noteStep / (float)seqLengthBig * 4) % 4;
+			int unHeatedNote = static_cast<int>(noteStep / (float)seqLengthBig * 4) % 4;
 			//DEBUG("playStep:%i seqLength:%i seqLengthBig:%i",playStep,seqLength,seqLengthBig);
 
 			bool canRnd = false;
-			if(playStep == 0 && heat <= 0.5f){
+			bool canHeat = false;
+			if(playStep == 0){
 				noteToPlay = 0; //First Note
-			}else if(seqLength > 1 && playStep == static_cast<unsigned int>(seqLength - 1) && heat <= 0.5f){
+			}else if(seqLength > 1 && playStep == static_cast<unsigned int>(seqLength - 1)){
 				noteToPlay = 3; //Last Note
 			}else if(playStep >= static_cast<unsigned int>(seqLength)){
 				noteToPlay = -1; //Past Seq, Don't play a note
 			}else{
+				noteToPlay = unHeatedNote;
+				canRnd = true;
+				canHeat = true;
+			}
+
+			if(seqLengthBig <= 2 && noteToPlay != -1){
+				canRnd = true;
+				canHeat = true;
+			}
+
+			if(canHeat){
 				int maxHeatSpots = seqLengthBig - 2;
+				if(maxHeatSpots < 1) maxHeatSpots = 1;
 				float val = (noteStep % maxHeatSpots) / (float)maxHeatSpots;
 				//DEBUG("val:%f heat:%f noteStep:%i",val,heat,noteStep);
 				isHeat = val < heat * 2;
-				float heat2 = heat - 0.5f;
-				shunt = fmod(val * 7649.f, 1.f) < heat2;
-				flip = fmod(val * 137.f, 1.f) < heat2;
 				if(isHeat){
 					noteToPlay = noteStep % 4;
-				}else{
-					noteToPlay = stableNote;
+					//High Heat also shunts and flips
+					float heat2 = heat - 0.5f;
+					shunt = fmod(val * 7649.f, 1.f) < heat2;
+					flip = fmod(val * 137.f, 1.f) < heat2;
 				}
-				canRnd = true;
 			}
-
-			if(seqLengthBig <= 2) canRnd = true;
 
 			bool isRnd = false;
 			if(canRnd){
@@ -214,7 +226,7 @@ struct OneShot : Module {
 			if(flip) noteToPlay = 3 - noteToPlay;
 
 			//Don't display red if we ended on the same note anyways
-			if(noteToPlay == stableNote) isHeat = false;
+			if(noteToPlay == unHeatedNote) isHeat = false;
 
 			if(state == PLAYING){
 				if(playStep >= static_cast<unsigned int>(seqLength)){
