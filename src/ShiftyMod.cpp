@@ -285,7 +285,7 @@ struct ShiftyMod : Module {
 				{
 					float echo = params[ECHO_PARAMS + row].getValue() + bridge.echo[row];
 					if(!hit && echo > 0.f){
-						int idx = (int)floor(delay * (1.f + (abs(1.f - echo * 2.f))) * HIT_QUEUE_SCALAR);
+						int idx = (int)floor(delay * (1.f + (abs(1.f - echo * 2.f))) * static_cast<long>(HIT_QUEUE_SCALAR));
 						idx = idx % HIT_QUEUE_FULL_SIZE;
 						if(idx < 0) idx += HIT_QUEUE_FULL_SIZE;
 						hit = hitQueue[idx];
