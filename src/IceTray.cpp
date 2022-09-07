@@ -273,7 +273,6 @@ struct IceTray : Module {
 	dsp::DoubleRingBuffer<float, PITCH_BUFF_SIZE> in_Buffer [MAX_CHANNELS];
 	dsp::DoubleRingBuffer<float, PITCH_BUFF_SIZE> ps_Buffer [MAX_CHANNELS];
 	PitchShifter *pShifter [MAX_CHANNELS];
-	bool first = true;
 
 	bool cubeButtonDown [BUFFER_COUNT];
 	bool cubeButtonDir [BUFFER_COUNT];
@@ -316,16 +315,19 @@ struct IceTray : Module {
 		configBypass(LEFT_INPUT, LEFT_OUTPUT);
 		configBypass(RIGHT_INPUT, RIGHT_OUTPUT);
 
-
 		pShifter[0] = new PitchShifter();
 		pShifter[1] = new PitchShifter();
 
 		clearCubes();
-		first = true;
 		in_Buffer[0].clear();
 		in_Buffer[1].clear();
 		ps_Buffer[0].clear();
 		ps_Buffer[1].clear();
+	}
+
+	~IceTray() override {
+		delete pShifter[0];
+		delete pShifter[1];
 	}
 
 	void clearCubes(){
@@ -369,7 +371,6 @@ struct IceTray : Module {
 		Module::onReset(e);
 
 		clearCubes();
-		first = true;
 		in_Buffer[0].clear();
 		in_Buffer[1].clear();
 		ps_Buffer[0].clear();
@@ -565,12 +566,6 @@ struct IceTray : Module {
 		float rawInput [MAX_CHANNELS] = {inputs[LEFT_INPUT].getVoltageSum(), inputs[RIGHT_INPUT].getVoltageSum()};
 		bool inputConnected [MAX_CHANNELS] = {inputs[LEFT_INPUT].isConnected(), inputs[RIGHT_INPUT].isConnected()};
 
-		if (first) {
-			pShifter[0]->init(PITCH_BUFF_SIZE, 8, args.sampleRate);
-			pShifter[1]->init(PITCH_BUFF_SIZE, 8, args.sampleRate);
-			first = false;
-		}
-
 		float pitchShiftedInput [MAX_CHANNELS] = {0,0};
 
 		for(int ci = 0; ci < MAX_CHANNELS; ci++){
@@ -678,6 +673,14 @@ struct IceTray : Module {
 		outputs[RIGHT_OUTPUT].setVoltage(output[1]);
 		feedbackValue[0] = output[0];
 		feedbackValue[1] = output[1];
+	}
+
+	void onSampleRateChange(const SampleRateChangeEvent& e) override {
+		pShifter[0]->cleanup();
+		pShifter[1]->cleanup();
+
+		pShifter[0]->init(PITCH_BUFF_SIZE, 8, e.sampleRate);
+		pShifter[1]->init(PITCH_BUFF_SIZE, 8, e.sampleRate);
 	}
 
 	void getPlaybackOuput(float & out0, float & out1, int index){
