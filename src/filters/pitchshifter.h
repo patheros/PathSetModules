@@ -24,7 +24,7 @@ struct PitchShifter {
 	float *gSynFreq;
 	float *gSynMagn;
 	float sampleRate;
-	PFFFT_Setup *pffftSetup;
+	PFFFT_Setup *pffftSetup = NULL;
 	long gRover = false;
 	double magn, phase, tmp, window, real, imag;
 	double freqPerBin, expct, invOsamp, invFftFrameSize, invFftFrameSize2, invPi;
@@ -64,7 +64,9 @@ struct PitchShifter {
 		gSynMagn = new float[fftFrameSize] {0.f};
 	}
 
-	~PitchShifter() {
+	void cleanup() {
+		if (pffftSetup == NULL)
+			return;
 		pffft_destroy_setup(pffftSetup);
 		delete[] gInFIFO;
 		delete[] gOutFIFO;
@@ -77,6 +79,10 @@ struct PitchShifter {
 		delete[] gSynMagn;
 		pffft_aligned_free(gFFTworksp);
 		pffft_aligned_free(gFFTworkspOut);
+	}
+
+	~PitchShifter() {
+		cleanup();
 	}
 
 	void process(const float pitchShift, const float *input, float *output) {
