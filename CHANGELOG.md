@@ -1,6 +1,15 @@
 
 # Change Log
 
+## v2.4.1
+* IceTray
+  * Fixed crash with Cardinal when audio device was stopped or bypassed.
+  * Fixed memory leak.
+
+## v2.4.0
+* OneShot - New Module!
+  * Chain-able sequencer. Interjects short bursts of sequences when triggered.
+
 ## v2.3.1
 * IceTray
   * Fixed crash when completely froze, i.e. black.
