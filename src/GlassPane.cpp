@@ -8,8 +8,8 @@ License: GNU GPL-3.0
 #include "cvRange.hpp"
 
 //Disable Debug Macro
-//#undef DEBUG
-//#define DEBUG(...) {}
+#undef DEBUG
+#define DEBUG(...) {}
 
 #define NODE_MAX_PANE 16
 #define NODE_MAX_PLUS 8
@@ -90,24 +90,39 @@ struct GPRoot : Module {
 
 	struct ProcessContext{
 		//Persistant
-		int activeNode = 0;
+		int activeNodeGlobal = 0;
+		int activeNodeOffset = 0;
+		int activeNodeLocal(){
+			return activeNodeGlobal - activeNodeOffset;
+		}
 		float activeVoltage = 0;
 
 		//Not Persistant
 		int clockLength = 0;
 		bool clockLowEvent = false;
 		bool clockHighEvent = false;
-		int activeNode_snapShot = 0;
+		int activeNodeGlobal_snapShot = 0;
+		void snapShotActiveNode(){
+			activeNodeGlobal_snapShot = activeNodeGlobal;
+		}
+		int activeNodeLocal_snapShot(){
+			return activeNodeGlobal_snapShot - activeNodeOffset; 
+		}
 		bool endOfLine = false;
 
 		//Arpeggiate (Not Persistant)
-		int arpeggiateNode = 0; //Root arpeggiating Note
+		int arpeggiateNodeGlobal = 0; //Root arpeggiating Note
+		int arpeggiateNodeLocal(){
+			return arpeggiateNodeGlobal - activeNodeOffset;
+		} 
 		int arpeggiateCounter = 0; //Number of process calls left before the arpeggiate gate goes up or down
 		int arpeggiateLength = 0; //The total number of process calls between the arpeggiate gate going up or down 
 		int arpeggiateLeft = 0; //The number of times the arpeggiate gate will go down again before exiting arpeggiation
 		bool arpeggiateHigh = false; //If the arpeggiate gate is currently high
 		bool arpHighEvent = false;
 		bool arpLowEvent = false;
+
+
 
 	};
 
@@ -125,7 +140,6 @@ struct GPRoot : Module {
 	int cvKnobParam;	
 
 	//Non Persisted State
-	bool firstProcess;
 
 	//Persisted State
 	vector<Node> nodes;
@@ -188,7 +202,6 @@ struct GPRoot : Module {
 		weightedOdds = false;
 		weightedCycle = false;
 		range = Bipolar_1;
-		firstProcess = true;
 	}
 
 	json_t *dataToJson() override{
@@ -222,64 +235,9 @@ struct GPRoot : Module {
 		weightedCycle = json_bool_value(json_object_get(jobj, "weightedCycle"));
 	}
 
-	void preProcess() {
-		if(firstProcess){
-			firstProcess = false;
-			for(int ni = 0; ni < nodeMax; ni++){
-				setModeLight(ni);
-			}
-		}
-	}
-
-	void arpeggiateClock(ProcessContext& pc){
-		//Arpeggiate Clock
-		pc.arpHighEvent = false;
-		pc.arpLowEvent = false;
-		if(pc.arpeggiateCounter > 0){
-			if(arpeggiateSpeed == 1){
-				//Special case for whole note speed
-				//In this case we don't use a counter and instead just pass the clock events on
-				pc.arpHighEvent = pc.clockHighEvent;
-				pc.arpLowEvent = pc.clockLowEvent;
-			}else{
-				//We are Arpeggiating
-				pc.arpeggiateCounter--;
-				if(pc.arpeggiateCounter == 0){
-					//We hit an arpeggiate clock transition
-					if(pc.arpeggiateHigh){
-						//Low Transition
-						pc.arpLowEvent = true;
-						pc.arpeggiateHigh = false;					
-					}else{
-						//High Transition (or End)
-						pc.arpHighEvent = true;
-						pc.arpeggiateHigh = true;
-					}					
-				}
-			}
-		}
-		if(pc.arpHighEvent){
-			//High Transition
-			pc.arpeggiateLeft --;
-			if(pc.arpeggiateLeft > 0){
-				resetArpeggiateCounter(pc);
-				setActiveNode(pc,pc.arpeggiateNode);
-				DEBUG("Arp going High. Left:%i",pc.arpeggiateLeft);
-			}else{
-				//End arpegiation
-				pc.arpHighEvent = false; //Consume arpHighEvent
-				DEBUG("End of arpegiation");
-				if(pc.activeNode == pc.arpeggiateNode){
-					DEBUG("End of arpegiation - setActiveNode(pc,0)");
-					//Prevent endless arpeggiating on the same note
-					setActiveNode(pc,0);
-				}
-				cleanUpArpeggiation(pc);
-			}
-		}
-		if(pc.arpLowEvent){
-			resetArpeggiateCounter(pc);
-			DEBUG("Arp going Low. Left:%i",pc.arpeggiateLeft);
+	void onAdd(const AddEvent& e) override {
+		for(int ni = 0; ni < nodeMax; ni++){
+			setModeLight(ni);
 		}
 	}
 
@@ -306,7 +264,7 @@ struct GPRoot : Module {
 			//Note we don't put the arp checks inside arpeggiateCounter > 0 because
 			//then we miss the last gate down because the logic above clears it on
 			//the same frame it set the arp events
-			if(pc.arpHighEvent && ni == pc.activeNode_snapShot){
+			if(pc.arpHighEvent && ni == pc.activeNodeLocal_snapShot()){
 				pc.arpHighEvent = false; //Consume high event
 				inputHighEvent = true;
 				node.triggerSource = TS_Arpeggiate;
@@ -318,7 +276,7 @@ struct GPRoot : Module {
 				DEBUG("Low caused by ARP");
 			}
 			if(pc.arpeggiateCounter <= 0){
-				if(pc.clockHighEvent && ni == pc.activeNode_snapShot){
+				if(pc.clockHighEvent && ni == pc.activeNodeLocal_snapShot()){
 					pc.clockHighEvent = false; //Consume high event
 					inputHighEvent = true;
 					node.triggerSource = TS_Clock;
@@ -464,7 +422,7 @@ struct GPRoot : Module {
 					}
 				}
 				if(pc.arpeggiateLeft <= 0){
-					pc.arpeggiateNode = ni;
+					pc.arpeggiateNodeGlobal = ni + pc.activeNodeOffset;
 					node.state = 0; //Only reset cur output if this is the root arpeggiate note, otherwise keep it at prev value for more chaos 
 				}
 				if(arpeggiateSpeed <= 0){
@@ -496,12 +454,17 @@ struct GPRoot : Module {
 
 	void setActiveNode(ProcessContext& pc, int node){
 
+		DEBUG("setActiveNode prev %i new %i = %i + %i",pc.activeNodeGlobal, node + pc.activeNodeOffset, node, pc.activeNodeOffset);
+
 		//Update Internal State
-		pc.activeNode = node;
+		pc.activeNodeGlobal = node + pc.activeNodeOffset;
 
 		float cv = 0;
-		if(pc.activeNode >= 0) cv = params[cvKnobParam + pc.activeNode].getValue();
-		cv = mapCVRange(cv,range);
+		int activeNodeLocal = pc.activeNodeLocal();
+		if(activeNodeLocal >= 0 && activeNodeLocal < nodeMax){
+			cv = params[cvKnobParam + activeNodeLocal].getValue();
+			cv = mapCVRange(cv,range);
+		}
 		pc.activeVoltage = cv;
 
 	}
@@ -593,9 +556,26 @@ struct GPRoot : Module {
 
 	void cleanUpArpeggiation(ProcessContext& pc){		
 		pc.arpeggiateLeft = 0;
-		pc.arpeggiateNode = 0;
+		pc.arpeggiateNodeGlobal = 0;
 		pc.arpeggiateCounter = 0;
 		pc.arpeggiateHigh = false;
+	}
+
+	void updateActiveLights(ProcessContext& pc){		
+		//Update Active Lights
+		int activeNodeLocal = pc.activeNodeLocal();
+		int arpeggiateNodeLocal = pc.arpeggiateNodeLocal();
+		DEBUG("updateActiveLights activeNodeLocal %i",activeNodeLocal);
+		bool arpsLeft = pc.arpeggiateLeft > 0;
+		for(int ni = 0; ni < nodeMax; ni++){
+			if(activeNodeLocal == ni){
+				lights[activeLight + ni].setBrightness(1.f);
+			}else if(arpsLeft && arpeggiateNodeLocal == ni){
+				lights[activeLight + ni].setBrightness(0.3f);
+			}else{
+				lights[activeLight + ni].setBrightness(0.f);
+			}
+		}
 	}
 
 };
@@ -721,10 +701,6 @@ struct PlusPane : GPRoot {
 		initalize();
 	}
 
-	void onReset(const ResetEvent& e) override {
-		Module::onReset(e);
-		initalize();
-	}	
 };
 
 struct PlusPaneWidget : GPRootWidget {
@@ -828,11 +804,6 @@ struct GlassPane : GPRoot {
 		initalize();
 	}
 
-	void onReset(const ResetEvent& e) override {
-		Module::onReset(e);
-		initalize();
-	}
-
 	void initalize() override{
 		GPRoot::initalize();
 		
@@ -846,7 +817,7 @@ struct GlassPane : GPRoot {
 	json_t *dataToJson() override{
 		json_t *jobj = GPRoot::dataToJson();
 
-		json_object_set_new(jobj, "activeNode", json_integer(pc.activeNode));		
+		json_object_set_new(jobj, "activeNode", json_integer(pc.activeNodeGlobal));		
 		json_object_set_new(jobj, "activeVoltage", json_real(pc.activeVoltage));
 
 		return jobj;
@@ -855,15 +826,13 @@ struct GlassPane : GPRoot {
 	void dataFromJson(json_t *jobj) override {	
 		GPRoot::dataFromJson(jobj);
 
-		pc.activeNode = json_integer_value(json_object_get(jobj, "activeNode"));
+		pc.activeNodeGlobal = json_integer_value(json_object_get(jobj, "activeNode"));
 		pc.activeVoltage = json_real_value(json_object_get(jobj, "activeVoltage"));	
 	}
 
 	void process(const ProcessArgs& args) override {
 
-		int prevActiveNote = pc.activeNode;
-
-		GPRoot::preProcess();
+		int prevActiveNode = pc.activeNodeGlobal;
 
 		//Clock In
 		pc.clockHighEvent = false;
@@ -875,11 +844,12 @@ struct GlassPane : GPRoot {
 
 		countClockLength(clockCounter,pc.clockLength,pc.clockHighEvent);
 
-		GPRoot::arpeggiateClock(pc);
+		arpeggiateClock(pc);
 
 		//Reset In
 		if(schmittTrigger(resetHigh,inputs[RESET_INPUT].getVoltage())){
 			DEBUG("reset triggering");
+			pc.activeNodeOffset = 0;
 			setActiveNode(pc,0);
 			cleanUpArpeggiation(pc);
 			pc.clockLowEvent = true;
@@ -888,13 +858,14 @@ struct GlassPane : GPRoot {
 
 		//Reset Handle
 		if(pc.endOfLine){
+			pc.activeNodeOffset = 0;
 			setActiveNode(pc,0);
 			pc.clockHighEvent = true;
 			pc.endOfLine = false;
 			DEBUG("endOfLine triggering clockHighEvent");
 		}
 
-		pc.activeNode_snapShot = pc.activeNode;
+		pc.snapShotActiveNode();
 
 		//Main Gate Output
 		//Has to come before node loop since it consumes some events
@@ -907,28 +878,145 @@ struct GlassPane : GPRoot {
 			outputs[GATE_OUTPUT].setVoltage(0.f);
 		}	
 
-		GPRoot::processNodeLoop(pc);
+		//Node Process Loop
+		visitAllModules([=](GPRoot* expander) {
+			expander->processNodeLoop(pc);
+		});
 
 		//Update Main Gate Output
-		if(prevActiveNote != pc.activeNode){
-			prevActiveNote = pc.activeNode;
+		if(prevActiveNode != pc.activeNodeGlobal){
 
 			//Update CV Output
 			outputs[CV_OUTPUT].setVoltage(pc.activeVoltage);
 
-			//Update Active Lights
-			for(int ni = 0; ni < NODE_MAX_PANE; ni++){
-				if(pc.activeNode == ni){
-					lights[ACTIVE_LIGHT + ni].setBrightness(1.f);
-				}else if(pc.arpeggiateNode == ni && pc.arpeggiateLeft > 0){
-					lights[ACTIVE_LIGHT + ni].setBrightness(0.3f);
-				}else{
-					lights[ACTIVE_LIGHT + ni].setBrightness(0.f);
-				}
-			}
-			//TODO Ripple Lights to Expanders
+			visitAllModules([=](GPRoot* expander) {
+				expander->updateActiveLights(pc);
+			});
 		}
 	}
+
+	void arpeggiateClock(ProcessContext& pc){
+		//Arpeggiate Clock
+		pc.arpHighEvent = false;
+		pc.arpLowEvent = false;
+		if(pc.arpeggiateCounter > 0){
+			if(arpeggiateSpeed == 1){
+				//Special case for whole note speed
+				//In this case we don't use a counter and instead just pass the clock events on
+				pc.arpHighEvent = pc.clockHighEvent;
+				pc.arpLowEvent = pc.clockLowEvent;
+			}else{
+				//We are Arpeggiating
+				pc.arpeggiateCounter--;
+				if(pc.arpeggiateCounter == 0){
+					//We hit an arpeggiate clock transition
+					if(pc.arpeggiateHigh){
+						//Low Transition
+						pc.arpLowEvent = true;
+						pc.arpeggiateHigh = false;					
+					}else{
+						//High Transition (or End)
+						pc.arpHighEvent = true;
+						pc.arpeggiateHigh = true;
+					}					
+				}
+			}
+		}
+		if(pc.arpHighEvent){
+			//High Transition
+			pc.arpeggiateLeft --;
+			if(pc.arpeggiateLeft > 0){
+				resetArpeggiateCounter(pc);
+				setActiveNodeGlobal(pc.arpeggiateNodeGlobal);
+				DEBUG("Arp going High. Left:%i",pc.arpeggiateLeft);
+			}else{
+				//End arpegiation
+				pc.arpHighEvent = false; //Consume arpHighEvent
+				DEBUG("End of arpegiation");
+				if(pc.activeNodeGlobal == pc.arpeggiateNodeGlobal){
+					DEBUG("End of arpegiation - pc.endOfLine = true");
+					//Prevent endless arpeggiating on the same note
+					pc.endOfLine = true;
+				}
+				cleanUpArpeggiation(pc);
+			}
+		}
+		if(pc.arpLowEvent){
+			resetArpeggiateCounter(pc);
+			DEBUG("Arp going Low. Left:%i",pc.arpeggiateLeft);
+		}
+	}
+
+	void visitAllModules(std::function<void(GPRoot* expander)> operation){
+		visitExpandersLeft(this,operation,1);
+		pc.activeNodeOffset = 0;
+		operation(this);
+		visitExpandersRight(this,operation,0);
+	}
+
+	void visitExpandersLeft(GPRoot* parent, std::function<void(GPRoot* expander)> operation, int depth){
+		auto _child = parent->leftExpander.module;
+		if(_child == NULL) return;
+		if(_child->model != modelPlusPane) return;
+		PlusPane* child = static_cast<PlusPane*>(_child);
+		//Visit then left so we walk left to right
+		visitExpandersLeft(child,operation,depth+1);
+		pc.activeNodeOffset = depth * -NODE_MAX_PLUS;
+		operation(child);
+	}
+
+	void visitExpandersRight(GPRoot* parent, std::function<void(GPRoot* expander)> operation, int depth){
+		auto _child = parent->rightExpander.module;
+		if(_child == NULL) return;
+		if(_child->model != modelPlusPane) return;
+		PlusPane* child = static_cast<PlusPane*>(_child);
+		//Operation then visit so we walk left to right
+		pc.activeNodeOffset = NODE_MAX_PANE + depth * NODE_MAX_PLUS;
+		operation(child);
+		visitExpandersRight(child,operation,depth+1);
+	}
+
+
+	void setActiveNodeGlobal(int node){
+		DEBUG("setActiveNodeGlobal node %i",node);
+		if(node < 0){
+			setActiveNodeGlobal_toLeft(this,node+NODE_MAX_PLUS,1);
+		}else if (node >= NODE_MAX_PANE){
+			setActiveNodeGlobal_toRight(this,node-NODE_MAX_PANE,0);
+		}else{
+			pc.activeNodeOffset = 0;
+			setActiveNode(pc, node);
+		}
+	}
+
+	void setActiveNodeGlobal_toLeft(GPRoot* parent, int node, int depth){
+		auto _child = parent->leftExpander.module;
+		if(_child == NULL) return;
+		if(_child->model != modelPlusPane) return;
+		PlusPane* child = static_cast<PlusPane*>(_child);		
+		if(node < 0){
+			node += NODE_MAX_PLUS;
+			setActiveNodeGlobal_toLeft(child, node, depth+1);
+		}else{
+			pc.activeNodeOffset = depth * -NODE_MAX_PLUS;
+			child->setActiveNode(pc,node);
+		}
+	}
+
+	void setActiveNodeGlobal_toRight(GPRoot* parent, int node, int depth){
+		auto _child = parent->rightExpander.module;
+		if(_child == NULL) return;
+		if(_child->model != modelPlusPane) return;
+		PlusPane* child = static_cast<PlusPane*>(_child);		
+		if(node >= NODE_MAX_PLUS){
+			node -= NODE_MAX_PLUS;
+			setActiveNodeGlobal_toRight(child, node, depth+1);
+		}else{
+			pc.activeNodeOffset = NODE_MAX_PANE + depth * NODE_MAX_PLUS;
+			child->setActiveNode(pc,node);
+		}
+	}
+
 
 };
 
@@ -978,6 +1066,34 @@ struct GlassPaneWidget : GPRootWidget {
 		menu->addChild(createMenuLabel("GlassPane"));
 
 		appendBaseContextMenu(module,menu);	
+
+		menu->addChild(createMenuItem("+Pane Expander to Left (17HP)", "",
+			[=]{
+				addExpander(true);
+			}
+		));
+		menu->addChild(createMenuItem("+Pane Expander to Right (17HP)", "",
+			[=]{
+				addExpander(false);
+			}
+		));
+	}
+
+	void addExpander(bool left){
+		Vec myPos = this->box.pos;
+		Vec expanderPos = left ? myPos.minus(Vec(RACK_GRID_WIDTH*17,0)) : myPos.plus(Vec(this->box.size.x,0));
+
+		Module* module = modelPlusPane->createModule();
+		APP->engine->addModule(module);
+		
+		ModuleWidget *moduleWidget = modelPlusPane->createModuleWidget(module);
+	 	APP->scene->rack->setModulePosForce(moduleWidget, expanderPos);
+	 	APP->scene->rack->addModule(moduleWidget);
+
+		history::ModuleAdd *h = new history::ModuleAdd;
+		h->name = "create expander module";
+		h->setModule(moduleWidget);
+		APP->history->push(h);
 	}
 };
 
