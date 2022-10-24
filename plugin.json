@@ -57,6 +57,16 @@
       ]
     },
     {
+      "slug": "PlusPane",
+      "name": "+Pane",
+      "description": "Bi-directional expander for GlassPane.",
+      "manualUrl": "https://github.com/patheros/PathSetManuals/blob/main/modules/GlassPane.md",
+      "tags": [
+        "Sequencer",
+        "Random"
+      ]
+    },
+    {
       "slug": "ShiftyExpander",
       "name": "ShiftyExpander",
       "description": "Expander for Shifty. Adds CV and Atenuverters for all the knobs on Shifty.",

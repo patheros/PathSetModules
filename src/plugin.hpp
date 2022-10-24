@@ -17,6 +17,7 @@ extern Model* modelShiftyExpander;
 extern Model* modelIceTray;
 extern Model* modelAstroVibe;
 extern Model* modelGlassPane;
+extern Model* modelPlusPane;
 extern Model* modelNudge;
 extern Model* modelOneShot;
 

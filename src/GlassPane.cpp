@@ -33,7 +33,8 @@ const std::string ARP_SPEEDS_LABELS [] = {
 const int WEIGHTING [] = {0,1,0,2,0,1,0,3,0,1,0,2};
 const int WEIGHTING_COUNTS [] = {6,3,2,1};
 
-template <int NODE_MAX>
+using std::vector;
+
 struct GPRoot : Module {
 
 	enum NodeMode{
@@ -114,17 +115,20 @@ struct GPRoot : Module {
 	//Config
 	int modeLight;
 	int stateLight;
+	int activeLight;
+	int nodeMax;
+
 	int modeButtonParam;
 	int nodeOutput;
 	int modeTriggerInput;
 	int nodeInput;
-	int cvKnobParam;
+	int cvKnobParam;	
 
 	//Non Persisted State
 	bool firstProcess;
 
 	//Persisted State
-	Node nodes [NODE_MAX];
+	vector<Node> nodes;
 
 	//Context Menu State
 	CVRange range;
@@ -136,18 +140,21 @@ struct GPRoot : Module {
 		//Sub class is expected to call initalize();
 		modeLight = 0;
 		stateLight = 0;
+		activeLight = 0;
 		modeButtonParam = 0;
 		modeTriggerInput = 0;
 		cvKnobParam = 0;
 	}
 
 	void configNodes(int modeButtonParam, int cvKnobParam, int modeTriggerInput, int nodeInput, int nodeOutput){
+		DEBUG("configNodes A");
 		this->modeButtonParam = modeButtonParam;
 		this->nodeOutput = nodeOutput;
 		this->modeTriggerInput = modeTriggerInput;
 		this->nodeInput = nodeInput;
 		this->cvKnobParam = cvKnobParam;
-		for(int ni = 0; ni < NODE_MAX; ni++){
+		DEBUG("configNodes B nodeMax %i",nodeMax);
+		for(int ni = 0; ni < nodeMax; ni++){
 			configSwitch<ModeParamQuantity>(modeButtonParam + ni, 0.f, 2.f, 0.f, "Mode ", std::vector<std::string>{"Cycle","Random","Ratchet"});
 			configParam<CVRangeParamQuantity<GPRoot>>(cvKnobParam + ni, 0.f, 1.f, 0.5f, "CV", "V");
 			configInput(modeTriggerInput + ni, "Mode Trigger");
@@ -162,7 +169,9 @@ struct GPRoot : Module {
 				std::string str(1, alphabet);
 				configOutput(nodeOutput + ni * NODE_OUT_MAX + oi, str);
 			}
+			DEBUG("configNodes C ni %i",ni);
 		}
+		DEBUG("configNodes D");
 	}
 
 	void onReset(const ResetEvent& e) override {
@@ -171,7 +180,8 @@ struct GPRoot : Module {
 	}
 
 	virtual void initalize(){
-		for(int ni = 0; ni < NODE_MAX; ni++){
+		nodes.resize(nodeMax);
+		for(int ni = 0; ni < nodeMax; ni++){
 			nodes[ni] = Node();
 		}		
 		arpeggiateSpeed = 2;
@@ -185,7 +195,7 @@ struct GPRoot : Module {
 		json_t *jobj = json_object();
 
 		json_t *nodesJ = json_array();
-		for(int ni = 0; ni < NODE_MAX; ni++){
+		for(int ni = 0; ni < nodeMax; ni++){
 			json_array_insert_new(nodesJ, ni, nodes[ni].dataToJson());
 		}
 		json_object_set_new(jobj, "nodes", nodesJ);
@@ -201,7 +211,7 @@ struct GPRoot : Module {
 
 	void dataFromJson(json_t *jobj) override {					
 		json_t *nodesJ = json_object_get(jobj,"nodes");
-		for(int ni = 0; ni < NODE_MAX; ni++){
+		for(int ni = 0; ni < nodeMax; ni++){
 			nodes[ni].dataFromJson(json_array_get(nodesJ,ni));
 		}
 
@@ -215,7 +225,7 @@ struct GPRoot : Module {
 	void preProcess() {
 		if(firstProcess){
 			firstProcess = false;
-			for(int ni = 0; ni < NODE_MAX; ni++){
+			for(int ni = 0; ni < nodeMax; ni++){
 				setModeLight(ni);
 			}
 		}
@@ -275,7 +285,7 @@ struct GPRoot : Module {
 
 	void processNodeLoop(ProcessContext& pc) {
 		//Loop through Nodes
-		for(int ni = 0; ni < NODE_MAX; ni++){
+		for(int ni = 0; ni < nodeMax; ni++){
 			Node & node = nodes[ni];
 
 			//Mode Trigger
@@ -536,7 +546,7 @@ struct GPRoot : Module {
 	}
 
 	void resetNodesFromTrigger(){		
-		for(int ni = 0; ni < NODE_MAX; ni++){
+		for(int ni = 0; ni < nodeMax; ni++){
 			nodes[ni].state = NO_STATE;
 			DEBUG("node %i manualMode:%i mode:%f",ni,nodes[ni].manualMode,params[modeButtonParam + ni].getValue());
 			params[modeButtonParam + ni].setValue((float)(int)nodes[ni].manualMode);
@@ -592,17 +602,180 @@ struct GPRoot : Module {
 
 struct GPRootWidget : ModuleWidget {
 
+	//Config
+	int modeButtonParam;
+	int cvKnobParam;
+	int nodeInput;
+	int modeTriggerInput;
+	int nodeOutput;
+	int modeLight;
+	int stateLight;
+	int activeLight;
+
+	struct WhiteKnob : RoundKnob {
+		WhiteKnob(){
+			setSvg(APP->window->loadSvg(asset::plugin(pluginInstance,"res/WhiteKnob.svg")));
+			bg->setSvg(APP->window->loadSvg(asset::plugin(pluginInstance,"res/WhiteKnob_bg.svg")));
+		}
+	};
+
+	void addModule(GPRoot* module, Vec delta, int ni){
+		addParam(createParamCentered<ModeSwitch<VCVButton>>(mm2px(delta+Vec(26.15, 25.868)), module, modeButtonParam + ni));
+		addParam(createParamCentered<WhiteKnob>(mm2px(delta+Vec(7.544, 36.457)), module, cvKnobParam + ni));		
+		addInput(createInputCentered<PJ301MPort>(mm2px(delta+Vec(7.544, 25.868)), module, nodeInput + ni * NODE_IN_MAX + 0));
+		addInput(createInputCentered<PJ301MPort>(mm2px(delta+Vec(16.847, 25.868)), module, nodeInput + ni * NODE_IN_MAX + 1));
+		addInput(createInputCentered<PJ301MPort>(mm2px(delta+Vec(35.453, 25.868)), module, modeTriggerInput + ni));	
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(delta+Vec(16.847, 36.451)), module, nodeOutput + ni * NODE_OUT_MAX + 0));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(delta+Vec(26.15, 36.451)), module, nodeOutput + ni * NODE_OUT_MAX + 1));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(delta+Vec(35.453, 36.451)), module, nodeOutput + ni * NODE_OUT_MAX + 2));
+		addChild(createLightCentered<VCVBezelLight<RedGreenBlueLight>>(mm2px(delta+Vec(26.15, 25.868)), module, modeLight + ni * 3));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(delta+Vec(11.055, 40.484)), module, stateLight + ni * NODE_STATE_MAX + 0));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(delta+Vec(20.487, 40.484)), module, stateLight + ni * NODE_STATE_MAX + 1));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(delta+Vec(29.918, 40.484)), module, stateLight + ni * NODE_STATE_MAX + 2));
+		addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(delta+Vec(39.35, 40.484)), module, stateLight + ni * NODE_STATE_MAX + 3));
+		{
+			auto light = createLight<RectangleLight<BlueLight>>(mm2px(delta+Vec(2.2, 30.364)), module, activeLight + ni);
+			light->box.size = mm2px(Vec(38.719, 1.590));
+			light->module = module;
+			addChild(light);
+		}
+	}
+
+	void appendBaseContextMenu(GPRoot* module, Menu* menu) {
+
+		addRangeSelectMenu<GPRoot>(module,menu);
+
+		menu->addChild(createSubmenuItem("Cycle", module->weightedCycle ? "Weighted" : "Evenly",
+			[=](Menu* menu) {
+				menu->addChild(createMenuLabel("Controls if Cylce steps play Evenly, or Weighted to output A."));
+				menu->addChild(createMenuItem("Evenly", CHECKMARK(module->weightedCycle == false), [module]() { 
+					module->weightedCycle = false;
+				}));
+				menu->addChild(createMenuItem("Weighted", CHECKMARK(module->weightedCycle == true), [module]() { 
+					module->weightedCycle = true;
+				}));
+			}
+		));
+
+		menu->addChild(createSubmenuItem("Odds", module->weightedOdds ? "Weighted" : "Evenly",
+			[=](Menu* menu) {
+				menu->addChild(createMenuLabel("Controls if Random steps are Evenly distributed or Weighted to output A."));
+				menu->addChild(createMenuItem("Evenly", CHECKMARK(module->weightedOdds == false), [module]() { 
+					module->weightedOdds = false;
+				}));
+				menu->addChild(createMenuItem("Weighted", CHECKMARK(module->weightedOdds == true), [module]() { 
+					module->weightedOdds = true;
+				}));
+			}
+		));
+
+		menu->addChild(createSubmenuItem("Ratchet Speed", ARP_SPEEDS_LABELS[module->arpeggiateSpeed],
+			[=](Menu* menu) {
+				menu->addChild(createMenuLabel("Change note subdvision when at an Ratchet step."));
+				for(int i = 0; i < ARPEGGIATE_SPEED_MAX; i++){
+					menu->addChild(createMenuItem(ARP_SPEEDS_LABELS[i], CHECKMARK(module->arpeggiateSpeed == i), [module,i]() { 
+						module->arpeggiateSpeed = i;
+					}));
+				}
+			}
+		));		
+	}
 };
 
-// struct PlusPane : GPRoot {
+struct PlusPane : GPRoot {
+	enum ParamId {
+		ENUMS(MODE_BUTTON_PARAM,NODE_MAX_PLUS),
+		ENUMS(CV_KNOB_PARAM,NODE_MAX_PLUS),
+		PARAMS_LEN
+	};
+	enum InputId {
+		ENUMS(NODE_IN_INPUT,NODE_MAX_PLUS * NODE_IN_MAX),
+		ENUMS(MODE_TRIGGER_INPUT,NODE_MAX_PLUS),
+		INPUTS_LEN
+	};
+	enum OutputId {
+		ENUMS(NODE_OUT_OUTPUT,NODE_MAX_PLUS * NODE_OUT_MAX),
+		OUTPUTS_LEN
+	};
+	enum LightId {
+		ENUMS(MODE_LIGHT_LIGHT,NODE_MAX_PLUS * 3),
+		ENUMS(STATE_LIGHT,NODE_MAX_PLUS * NODE_STATE_MAX),
+		ENUMS(ACTIVE_LIGHT,NODE_MAX_PLUS),
+		LIGHTS_LEN
+	};
 
-// }
+	//Non Persisted State
 
-// struct PlusPaneWidget : GPRootWidget {
+	//Persisted State
 
-// }
+	PlusPane() {
+		nodeMax = NODE_MAX_PLUS;
+		modeLight = MODE_LIGHT_LIGHT;
+		stateLight = STATE_LIGHT;
+		activeLight = ACTIVE_LIGHT;
 
-struct GlassPane : GPRoot<NODE_MAX_PANE> {
+		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
+
+		configNodes(MODE_BUTTON_PARAM, CV_KNOB_PARAM, MODE_TRIGGER_INPUT, NODE_IN_INPUT, NODE_OUT_OUTPUT);	
+
+		initalize();
+	}
+
+	void onReset(const ResetEvent& e) override {
+		Module::onReset(e);
+		initalize();
+	}	
+};
+
+struct PlusPaneWidget : GPRootWidget {
+
+	PlusPaneWidget(PlusPane* module) {
+
+		modeButtonParam = PlusPane::MODE_BUTTON_PARAM;
+		cvKnobParam = PlusPane::CV_KNOB_PARAM;
+		nodeInput = PlusPane::NODE_IN_INPUT;
+		modeTriggerInput = PlusPane::MODE_TRIGGER_INPUT;
+		nodeOutput = PlusPane::NODE_OUT_OUTPUT;
+		modeLight = PlusPane::MODE_LIGHT_LIGHT;
+		stateLight = PlusPane::STATE_LIGHT;
+		activeLight = PlusPane::ACTIVE_LIGHT;
+
+		setModule(module);
+		setPanel(createPanel(asset::plugin(pluginInstance, "res/PlusPane.svg")));
+
+		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		const Vec ORIGIN = Vec(7.544, 25.868);
+		const Vec PANE_POS [] = {
+			Vec(8.360, 25.868),Vec(49.988, 25.868),
+			Vec(8.360, 50.562),Vec(49.988, 50.562),
+			Vec(8.360, 75.257),Vec(49.988, 75.257),
+			Vec(8.360, 99.951),Vec(49.988, 99.951)
+		};
+
+		for(int ni = 0; ni < NODE_MAX_PLUS; ni++){
+			Vec delta = PANE_POS[ni] - ORIGIN;
+			addModule(module,delta,ni);
+		}
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		auto module = dynamic_cast<PlusPane*>(this->module);
+
+		menu->addChild(new MenuEntry); //Blank Row
+		menu->addChild(createMenuLabel("+Pane"));
+
+		appendBaseContextMenu(module,menu);	
+	}
+};
+
+
+Model* modelPlusPane = createModel<PlusPane, PlusPaneWidget>("PlusPane");
+
+struct GlassPane : GPRoot {
 	enum ParamId {
 		ENUMS(MODE_BUTTON_PARAM,NODE_MAX_PANE),
 		ENUMS(CV_KNOB_PARAM,NODE_MAX_PANE),
@@ -639,16 +812,18 @@ struct GlassPane : GPRoot<NODE_MAX_PANE> {
 	//Persisted State
 
 	GlassPane() {
+		nodeMax = NODE_MAX_PANE;
+		modeLight = MODE_LIGHT_LIGHT;
+		stateLight = STATE_LIGHT;
+		activeLight = ACTIVE_LIGHT;
+
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 		configInput(CLOCK_INPUT, "Clock");
 		configInput(RESET_INPUT, "Reset");
 		configOutput(GATE_OUTPUT, "Gate");
 		configOutput(CV_OUTPUT, "CV");
 
-		configNodes(MODE_BUTTON_PARAM, CV_KNOB_PARAM, MODE_TRIGGER_INPUT, NODE_IN_INPUT, NODE_OUT_OUTPUT);
-
-		modeLight = MODE_LIGHT_LIGHT;
-		stateLight = STATE_LIGHT;
+		configNodes(MODE_BUTTON_PARAM, CV_KNOB_PARAM, MODE_TRIGGER_INPUT, NODE_IN_INPUT, NODE_OUT_OUTPUT);		
 
 		initalize();
 	}
@@ -758,22 +933,18 @@ struct GlassPane : GPRoot<NODE_MAX_PANE> {
 };
 
 
-const Vec PANE_POS [] = {
-	Vec(7.544, 25.868),	Vec(49.172, 25.868),Vec(90.8, 25.868),Vec(132.427, 25.868),
-	Vec(7.544, 50.562),Vec(49.172, 50.562),Vec(90.8, 50.562),Vec(132.427, 50.562),
-	Vec(7.544, 75.257),Vec(49.172, 75.257),Vec(90.8, 75.257),Vec(132.427, 75.257),
-	Vec(7.544, 99.951),Vec(49.172, 99.951),Vec(90.8, 99.951),Vec(132.427, 99.951)
-};
+struct GlassPaneWidget : GPRootWidget {
 
-struct WhiteKnob : RoundKnob {
-	WhiteKnob(){
-		setSvg(APP->window->loadSvg(asset::plugin(pluginInstance,"res/WhiteKnob.svg")));
-		bg->setSvg(APP->window->loadSvg(asset::plugin(pluginInstance,"res/WhiteKnob_bg.svg")));
-	}
-};
-
-struct GlassPaneWidget : ModuleWidget {
 	GlassPaneWidget(GlassPane* module) {
+		modeButtonParam = GlassPane::MODE_BUTTON_PARAM;
+		cvKnobParam = GlassPane::CV_KNOB_PARAM;
+		nodeInput = GlassPane::NODE_IN_INPUT;
+		modeTriggerInput = GlassPane::MODE_TRIGGER_INPUT;
+		nodeOutput = GlassPane::NODE_OUT_OUTPUT;
+		modeLight = GlassPane::MODE_LIGHT_LIGHT;
+		stateLight = GlassPane::STATE_LIGHT;
+		activeLight = GlassPane::ACTIVE_LIGHT;
+
 		setModule(module);
 		setPanel(createPanel(asset::plugin(pluginInstance, "res/GlassPane.svg")));
 
@@ -787,28 +958,16 @@ struct GlassPaneWidget : ModuleWidget {
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(151.033, 13.571)), module, GlassPane::GATE_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(160.336, 13.571)), module, GlassPane::CV_OUTPUT));
 
-		for(int ni = 0; ni < NODE_MAX_PANE; ni++){
-			Vec delta = PANE_POS[ni] - PANE_POS[0];
-			addParam(createParamCentered<ModeSwitch<VCVButton>>(mm2px(delta+Vec(26.15, 25.868)), module, GlassPane::MODE_BUTTON_PARAM + ni));
-			addParam(createParamCentered<WhiteKnob>(mm2px(delta+Vec(7.544, 36.457)), module, GlassPane::CV_KNOB_PARAM + ni));		
-			addInput(createInputCentered<PJ301MPort>(mm2px(delta+Vec(7.544, 25.868)), module, GlassPane::NODE_IN_INPUT + ni * NODE_IN_MAX + 0));
-			addInput(createInputCentered<PJ301MPort>(mm2px(delta+Vec(16.847, 25.868)), module, GlassPane::NODE_IN_INPUT + ni * NODE_IN_MAX + 1));
-			addInput(createInputCentered<PJ301MPort>(mm2px(delta+Vec(35.453, 25.868)), module, GlassPane::MODE_TRIGGER_INPUT + ni));				
-			addOutput(createOutputCentered<PJ301MPort>(mm2px(delta+Vec(16.847, 36.451)), module, GlassPane::NODE_OUT_OUTPUT + ni * NODE_OUT_MAX + 0));
-			addOutput(createOutputCentered<PJ301MPort>(mm2px(delta+Vec(26.15, 36.451)), module, GlassPane::NODE_OUT_OUTPUT + ni * NODE_OUT_MAX + 1));
-			addOutput(createOutputCentered<PJ301MPort>(mm2px(delta+Vec(35.453, 36.451)), module, GlassPane::NODE_OUT_OUTPUT + ni * NODE_OUT_MAX + 2));
-			addChild(createLightCentered<VCVBezelLight<RedGreenBlueLight>>(mm2px(delta+Vec(26.15, 25.868)), module, GlassPane::MODE_LIGHT_LIGHT + ni * 3));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(delta+Vec(11.055, 40.484)), module, GlassPane::STATE_LIGHT + ni * NODE_STATE_MAX + 0));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(delta+Vec(20.487, 40.484)), module, GlassPane::STATE_LIGHT + ni * NODE_STATE_MAX + 1));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(delta+Vec(29.918, 40.484)), module, GlassPane::STATE_LIGHT + ni * NODE_STATE_MAX + 2));
-			addChild(createLightCentered<SmallLight<BlueLight>>(mm2px(delta+Vec(39.35, 40.484)), module, GlassPane::STATE_LIGHT + ni * NODE_STATE_MAX + 3));
-			{
-				auto light = createLight<RectangleLight<BlueLight>>(mm2px(delta+Vec(2.2, 30.364)), module, GlassPane::ACTIVE_LIGHT + ni);
-				light->box.size = mm2px(Vec(38.719, 1.590));
-				light->module = module;
-				addChild(light);
-			}
+		const Vec PANE_POS [] = {
+			Vec(7.544, 25.868),Vec(49.172, 25.868),Vec(90.8, 25.868),Vec(132.427, 25.868),
+			Vec(7.544, 50.562),Vec(49.172, 50.562),Vec(90.8, 50.562),Vec(132.427, 50.562),
+			Vec(7.544, 75.257),Vec(49.172, 75.257),Vec(90.8, 75.257),Vec(132.427, 75.257),
+			Vec(7.544, 99.951),Vec(49.172, 99.951),Vec(90.8, 99.951),Vec(132.427, 99.951)
+		};
 
+		for(int ni = 0; ni < NODE_MAX_PANE; ni++){
+			Vec delta = PANE_POS[ni] - PANE_POS[0];			
+			addModule(module,delta,ni);
 		}
 	}
 
@@ -818,42 +977,7 @@ struct GlassPaneWidget : ModuleWidget {
 		menu->addChild(new MenuEntry); //Blank Row
 		menu->addChild(createMenuLabel("GlassPane"));
 
-		addRangeSelectMenu<GlassPane>(module,menu);
-
-		menu->addChild(createSubmenuItem("Cycle", module->weightedCycle ? "Weighted" : "Evenly",
-			[=](Menu* menu) {
-				menu->addChild(createMenuLabel("Controls if Cylce steps play Evenly, or Weighted to output A."));
-				menu->addChild(createMenuItem("Evenly", CHECKMARK(module->weightedCycle == false), [module]() { 
-					module->weightedCycle = false;
-				}));
-				menu->addChild(createMenuItem("Weighted", CHECKMARK(module->weightedCycle == true), [module]() { 
-					module->weightedCycle = true;
-				}));
-			}
-		));
-
-		menu->addChild(createSubmenuItem("Odds", module->weightedOdds ? "Weighted" : "Evenly",
-			[=](Menu* menu) {
-				menu->addChild(createMenuLabel("Controls if Random steps are Evenly distributed or Weighted to output A."));
-				menu->addChild(createMenuItem("Evenly", CHECKMARK(module->weightedOdds == false), [module]() { 
-					module->weightedOdds = false;
-				}));
-				menu->addChild(createMenuItem("Weighted", CHECKMARK(module->weightedOdds == true), [module]() { 
-					module->weightedOdds = true;
-				}));
-			}
-		));
-
-		menu->addChild(createSubmenuItem("Ratchet Speed", ARP_SPEEDS_LABELS[module->arpeggiateSpeed],
-			[=](Menu* menu) {
-				menu->addChild(createMenuLabel("Change note subdvision when at an Ratchet step."));
-				for(int i = 0; i < ARPEGGIATE_SPEED_MAX; i++){
-					menu->addChild(createMenuItem(ARP_SPEEDS_LABELS[i], CHECKMARK(module->arpeggiateSpeed == i), [module,i]() { 
-						module->arpeggiateSpeed = i;
-					}));
-				}
-			}
-		));		
+		appendBaseContextMenu(module,menu);	
 	}
 };
 

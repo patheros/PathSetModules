@@ -17,6 +17,7 @@ void init(Plugin* p) {
 	p->addModel(modelIceTray);
 	p->addModel(modelAstroVibe);
 	p->addModel(modelGlassPane);
+	p->addModel(modelPlusPane);
 	p->addModel(modelNudge);
 	p->addModel(modelOneShot);
 
