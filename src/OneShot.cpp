@@ -66,10 +66,10 @@ struct OneShot : Module {
 
 	OneShot() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-		configParam<CVRangeParamQuantity<OneShot>>(STEP1_PARAM, 0.f, 1.f, 0.5f, "CV 1", "V");
-		configParam<CVRangeParamQuantity<OneShot>>(STEP2_PARAM, 0.f, 1.f, 0.5f, "CV 2", "V");
-		configParam<CVRangeParamQuantity<OneShot>>(STEP3_PARAM, 0.f, 1.f, 0.5f, "CV 3", "V");
-		configParam<CVRangeParamQuantity<OneShot>>(STEP4_PARAM, 0.f, 1.f, 0.5f, "CV 4", "V");
+		configParam<CVRangeParamQuantity>(STEP1_PARAM, 0.f, 1.f, 0.5f, "CV 1", "V")->range = &range;
+		configParam<CVRangeParamQuantity>(STEP2_PARAM, 0.f, 1.f, 0.5f, "CV 2", "V")->range = &range;
+		configParam<CVRangeParamQuantity>(STEP3_PARAM, 0.f, 1.f, 0.5f, "CV 3", "V")->range = &range;
+		configParam<CVRangeParamQuantity>(STEP4_PARAM, 0.f, 1.f, 0.5f, "CV 4", "V")->range = &range;
 		configParam(LENGTH_PARAM, 1, 16, 4, "Length");
 		configSwitch(STABLE_PARAM, 0.f, 1.f, 0.f, "Stable", std::vector<std::string>{"Stable","Unstable"});
 		configParam(CHANCE_PARAM, 0.f, 1.f, 0.f, "Random", "%", 0.f, 100.f, 0.f);
@@ -106,7 +106,7 @@ struct OneShot : Module {
 
 		noteToPlay = 0;
 
-		range = Bipolar_1;
+		range = CVRange(-1,1);
 	}
 
 	json_t *dataToJson() override{
@@ -116,7 +116,7 @@ struct OneShot : Module {
 		json_object_set_new(jobj, "playStep", json_integer(playStep));
 		json_object_set_new(jobj, "noteStep", json_integer(noteStep));
 		json_object_set_new(jobj, "noteToPlay", json_integer(noteToPlay));
-		json_object_set_new(jobj, "range", json_integer(range));
+		json_object_set_new(jobj, "range", range.dataToJson());
 
 		return jobj;
 	}
@@ -126,7 +126,7 @@ struct OneShot : Module {
 		playStep = json_integer_value(json_object_get(jobj, "playStep"));	
 		noteStep = json_integer_value(json_object_get(jobj, "noteStep"));	
 		noteToPlay = json_integer_value(json_object_get(jobj, "noteToPlay"));	
-		range = (CVRange)json_integer_value(json_object_get(jobj, "range"));	
+		range.dataFromJson(json_object_get(jobj, "range"));	
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -254,7 +254,7 @@ struct OneShot : Module {
 		}
 
 		if(state == PLAYING){
-			outputs[CV_OUT_OUTPUT].setVoltage(mapCVRange(params[STEP1_PARAM + noteToPlay].getValue(),range));
+			outputs[CV_OUT_OUTPUT].setVoltage(range.map(params[STEP1_PARAM + noteToPlay].getValue()));
 			outputs[GATE_OUT_OUTPUT].setVoltage(clockIn);
 			outputs[ACTIVE_GATE_OUTPUT].setVoltage(clockIn);
 		}else{
@@ -387,7 +387,7 @@ struct OneShotWidget : ModuleWidget {
 		menu->addChild(new MenuEntry); //Blank Row
 		menu->addChild(createMenuLabel("OneShot"));
 
-		addRangeSelectMenu<OneShot>(module,menu);
+		module->range.addMenu(module,menu);
 	}
 };
 

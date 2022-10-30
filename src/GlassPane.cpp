@@ -170,7 +170,7 @@ struct GPRoot : Module {
 		DEBUG("configNodes B nodeMax %i",nodeMax);
 		for(int ni = 0; ni < nodeMax; ni++){
 			configSwitch<ModeParamQuantity>(modeButtonParam + ni, 0.f, 2.f, 0.f, "Mode ", std::vector<std::string>{"Cycle","Random","Ratchet"});
-			configParam<CVRangeParamQuantity<GPRoot>>(cvKnobParam + ni, 0.f, 1.f, 0.5f, "CV", "V");
+			configParam<CVRangeParamQuantity>(cvKnobParam + ni, 0.f, 1.f, 0.5f, "CV", "V")->range = &range;
 			configInput(modeTriggerInput + ni, "Mode Trigger");
 			for(int ii = 0 ; ii < NODE_IN_MAX; ii ++){
 				char alphabet = 'X' + ii;
@@ -201,7 +201,7 @@ struct GPRoot : Module {
 		arpeggiateSpeed = 2;
 		weightedOdds = false;
 		weightedCycle = false;
-		range = Bipolar_1;
+		range = CVRange(-1,1);
 	}
 
 	json_t *dataToJson() override{
@@ -214,7 +214,7 @@ struct GPRoot : Module {
 		json_object_set_new(jobj, "nodes", nodesJ);
 
 		//Context Menu State
-		json_object_set_new(jobj, "range", json_integer(range));
+		json_object_set_new(jobj, "range", range.dataToJson());
 		json_object_set_new(jobj, "arpeggiateSpeed", json_integer(arpeggiateSpeed));
 		json_object_set_new(jobj, "weightedOdds", json_bool(weightedOdds));
 		json_object_set_new(jobj, "weightedCycle", json_bool(weightedCycle));
@@ -229,7 +229,7 @@ struct GPRoot : Module {
 		}
 
 		//Context Menu State
-		range = (CVRange)json_integer_value(json_object_get(jobj, "range"));
+		range.dataFromJson(json_object_get(jobj, "range"));
 		arpeggiateSpeed = json_integer_value(json_object_get(jobj, "arpeggiateSpeed"));
 		weightedOdds = json_bool_value(json_object_get(jobj, "weightedOdds"));
 		weightedCycle = json_bool_value(json_object_get(jobj, "weightedCycle"));
@@ -463,7 +463,7 @@ struct GPRoot : Module {
 		int activeNodeLocal = pc.activeNodeLocal();
 		if(activeNodeLocal >= 0 && activeNodeLocal < nodeMax){
 			cv = params[cvKnobParam + activeNodeLocal].getValue();
-			cv = mapCVRange(cv,range);
+			cv = range.map(cv);
 		}
 		pc.activeVoltage = cv;
 
@@ -651,7 +651,7 @@ struct GPRootWidget : ModuleWidget {
 			}
 		));
 
-		addRangeSelectMenu<GPRoot>(module,menu);
+		module->range.addMenu(module,menu);
 
 		menu->addChild(createSubmenuItem("Cycle", module->weightedCycle ? "Weighted" : "Evenly",
 			[=](Menu* menu) {
