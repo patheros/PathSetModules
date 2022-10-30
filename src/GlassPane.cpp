@@ -813,7 +813,7 @@ struct GlassPane : GPRoot {
 	bool clockHigh;
 	bool resetHigh;
 	int clockCounter;
-	int clockRecentlyHigh;
+	int clockRecentlyHighOrLow;
 
 	//Persisted State
 
@@ -840,7 +840,7 @@ struct GlassPane : GPRoot {
 		clockHigh = false;
 		resetHigh = false;
 		clockCounter = 0;
-		clockRecentlyHigh = 0;
+		clockRecentlyHighOrLow = 0;
 
 		pc = ProcessContext();
 		lowPerfMode = false;
@@ -915,11 +915,11 @@ struct GlassPane : GPRoot {
 		}	
 
 		if(lowPerfMode){
-			if(pc.clockHighEvent) clockRecentlyHigh = 100;
-			else if(clockRecentlyHigh > 0) clockRecentlyHigh--;
+			if(pc.clockHighEvent || pc.clockLowEvent) clockRecentlyHighOrLow = 100;
+			else if(clockRecentlyHighOrLow > 0) clockRecentlyHighOrLow--;
 		}
 
-		if(!lowPerfMode || clockRecentlyHigh > 0){
+		if(!lowPerfMode || clockRecentlyHighOrLow > 0){
 
 			//Node Process Loop
 			visitAllModules([=](GPRoot* expander) {
