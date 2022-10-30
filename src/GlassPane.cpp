@@ -578,6 +578,18 @@ struct GPRoot : Module {
 		}
 	}
 
+	void randomizeCVs(){
+		for(int ni = 0; ni < nodeMax; ni++){
+			paramQuantities[cvKnobParam + ni]->randomize();
+		}
+	}
+
+	void randomizeModes(){
+		for(int ni = 0; ni < nodeMax; ni++){
+			paramQuantities[modeButtonParam + ni]->randomize();
+		}
+	}
+
 };
 
 struct GPRootWidget : ModuleWidget {
@@ -622,6 +634,22 @@ struct GPRootWidget : ModuleWidget {
 	}
 
 	void appendBaseContextMenu(GPRoot* module, Menu* menu) {
+
+		menu->addChild(createSubmenuItem("Randomize", "",
+			[module](Menu* menu) {
+				menu->addChild(createMenuItem("CVs", "",
+					[=]() {
+						module->randomizeCVs();
+					}
+				));
+
+				menu->addChild(createMenuItem("Modes", "",
+					[=]() {
+						module->randomizeModes();
+					}
+				));
+			}
+		));
 
 		addRangeSelectMenu<GPRoot>(module,menu);
 
