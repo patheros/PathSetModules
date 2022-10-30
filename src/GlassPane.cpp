@@ -915,7 +915,7 @@ struct GlassPane : GPRoot {
 		}	
 
 		if(lowPerfMode){
-			if(pc.clockHighEvent || pc.clockLowEvent) clockRecentlyHighOrLow = 100;
+			if(pc.clockHighEvent || pc.clockLowEvent || pc.arpHighEvent || pc.arpLowEvent) clockRecentlyHighOrLow = 100;
 			else if(clockRecentlyHighOrLow > 0) clockRecentlyHighOrLow--;
 		}
 
