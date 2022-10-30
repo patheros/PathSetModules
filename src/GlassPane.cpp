@@ -779,11 +779,13 @@ struct GlassPane : GPRoot {
 
 	//Persistant and Non Persistant State
 	ProcessContext pc;
+	bool lowPerfMode;
 
 	//Non Persisted State
 	bool clockHigh;
 	bool resetHigh;
 	int clockCounter;
+	int clockRecentlyHigh;
 
 	//Persisted State
 
@@ -810,8 +812,10 @@ struct GlassPane : GPRoot {
 		clockHigh = false;
 		resetHigh = false;
 		clockCounter = 0;
+		clockRecentlyHigh = 0;
 
 		pc = ProcessContext();
+		lowPerfMode = false;
 	}
 
 	json_t *dataToJson() override{
@@ -819,6 +823,8 @@ struct GlassPane : GPRoot {
 
 		json_object_set_new(jobj, "activeNode", json_integer(pc.activeNodeGlobal));		
 		json_object_set_new(jobj, "activeVoltage", json_real(pc.activeVoltage));
+
+		json_object_set_new(jobj, "lowPerfMode", json_bool(lowPerfMode));
 
 		return jobj;
 	}
@@ -828,6 +834,8 @@ struct GlassPane : GPRoot {
 
 		pc.activeNodeGlobal = json_integer_value(json_object_get(jobj, "activeNode"));
 		pc.activeVoltage = json_real_value(json_object_get(jobj, "activeVoltage"));	
+
+		lowPerfMode = json_bool_value(json_object_get(jobj, "lowPerfMode"));	
 	}
 
 	void process(const ProcessArgs& args) override {
@@ -878,21 +886,30 @@ struct GlassPane : GPRoot {
 			outputs[GATE_OUTPUT].setVoltage(0.f);
 		}	
 
-		//Node Process Loop
-		visitAllModules([=](GPRoot* expander) {
-			expander->processNodeLoop(pc);
-		});
-
-		//Update Main Gate Output
-		if(prevActiveNode != pc.activeNodeGlobal){
-
-			//Update CV Output
-			outputs[CV_OUTPUT].setVoltage(pc.activeVoltage);
-
-			visitAllModules([=](GPRoot* expander) {
-				expander->updateActiveLights(pc);
-			});
+		if(lowPerfMode){
+			if(pc.clockHighEvent) clockRecentlyHigh = 100;
+			else if(clockRecentlyHigh > 0) clockRecentlyHigh--;
 		}
+
+		if(!lowPerfMode || clockRecentlyHigh > 0){
+
+			//Node Process Loop
+			visitAllModules([=](GPRoot* expander) {
+				expander->processNodeLoop(pc);
+			});
+
+			//Update Main Gate Output
+			if(prevActiveNode != pc.activeNodeGlobal){
+
+				//Update CV Output
+				outputs[CV_OUTPUT].setVoltage(pc.activeVoltage);
+
+				visitAllModules([=](GPRoot* expander) {
+					expander->updateActiveLights(pc);
+				});
+			}
+		}
+
 	}
 
 	void arpeggiateClock(ProcessContext& pc){
@@ -1066,6 +1083,18 @@ struct GlassPaneWidget : GPRootWidget {
 		menu->addChild(createMenuLabel("GlassPane"));
 
 		appendBaseContextMenu(module,menu);	
+
+		menu->addChild(createSubmenuItem("Low Peformance Mode", module->lowPerfMode ? "On" : "Off",
+			[=](Menu* menu) {
+				menu->addChild(createMenuLabel("Only checks for node input tiggers when clock goes high"));
+				menu->addChild(createMenuItem("Off", CHECKMARK(module->lowPerfMode == false), [module]() { 
+					module->lowPerfMode = false;
+				}));
+				menu->addChild(createMenuItem("On", CHECKMARK(module->lowPerfMode == true), [module]() { 
+					module->lowPerfMode = true;
+				}));
+			}
+		));
 
 		menu->addChild(createMenuItem("+Pane Expander to Left (17HP)", "",
 			[=]{
