@@ -78,7 +78,7 @@ struct CVRange {
 	/**
 	 * Sets this CVRange to the data present in a json_t object.
 	 *
-	 * If json_t is not a JSON_OBJECT, then the data on this CVRange is not modified
+	 * If json_t is not a JSON_OBJECT, then the data on this CVRange is not modified.
 	 *
 	 * Expected use is calling it from inside dataFromJson on the module.
 	 *
@@ -91,6 +91,16 @@ struct CVRange {
 	 */
 	void dataFromJson(json_t *jobj) {		
 		switch(json_typeof(jobj)){
+			//Normal Case
+			case JSON_OBJECT:
+				cv_a = json_real_value(json_object_get(jobj, "a"));
+				cv_b = json_real_value(json_object_get(jobj, "b"));
+				break;
+			//Non-Object Case
+			default:
+				//Do Nothing
+				break;
+
 			//Backwards Compatabiltiy Case
 			case JSON_INTEGER:
 				switch(json_integer_value(jobj)){
@@ -109,13 +119,6 @@ struct CVRange {
 					case 11: /* Unipolar_2  */ cv_a = 0; cv_b = 2; break;
 				}			
 				break;
-			case JSON_OBJECT:
-				cv_a = json_real_value(json_object_get(jobj, "a"));
-				cv_b = json_real_value(json_object_get(jobj, "b"));
-				break;
-			default:
-				//Do Nothing
-				break;
 		}
 		updateInternal();
 	}
@@ -126,12 +129,21 @@ struct CVRange {
 		min = std::min(cv_a, cv_b);
 	}
 
-	///Converts [0,1] into the CV value
+	/**
+	 * Converts value from a paramter to voltage.
+	 * 
+	 * Example:
+	 * 
+	 *     float paramValue = params[CV_1_PARAM].getValue();
+	 *     float voltage = range.map(paramValue);
+	 *     outputs[SEQUENCE_OUTPUT].setVoltage(voltage);
+	 *
+	 */
 	float map(float zero_to_one){
 		return range * zero_to_one + min;
 	}
 
-	///Converts CV value into [0,1]
+	///Performs inverse of the `map` function
 	float invMap(float cv_value){
 		return (cv_value - min) / range;
 	}
