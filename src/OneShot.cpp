@@ -66,10 +66,10 @@ struct OneShot : Module {
 
 	OneShot() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
-		configParam<CVRangeParamQuantity>(STEP1_PARAM, 0.f, 1.f, 0.5f, "CV 1", "V")->range = &range;
-		configParam<CVRangeParamQuantity>(STEP2_PARAM, 0.f, 1.f, 0.5f, "CV 2", "V")->range = &range;
-		configParam<CVRangeParamQuantity>(STEP3_PARAM, 0.f, 1.f, 0.5f, "CV 3", "V")->range = &range;
-		configParam<CVRangeParamQuantity>(STEP4_PARAM, 0.f, 1.f, 0.5f, "CV 4", "V")->range = &range;
+		configCVParam(STEP1_PARAM, this, &range, "CV 1");
+		configCVParam(STEP2_PARAM, this, &range, "CV 2");
+		configCVParam(STEP3_PARAM, this, &range, "CV 3");
+		configCVParam(STEP4_PARAM, this, &range, "CV 4");
 		configParam(LENGTH_PARAM, 1, 16, 4, "Length");
 		configSwitch(STABLE_PARAM, 0.f, 1.f, 0.f, "Stable", std::vector<std::string>{"Stable","Unstable"});
 		configParam(CHANCE_PARAM, 0.f, 1.f, 0.f, "Random", "%", 0.f, 100.f, 0.f);

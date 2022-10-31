@@ -170,7 +170,7 @@ struct GPRoot : Module {
 		DEBUG("configNodes B nodeMax %i",nodeMax);
 		for(int ni = 0; ni < nodeMax; ni++){
 			configSwitch<ModeParamQuantity>(modeButtonParam + ni, 0.f, 2.f, 0.f, "Mode ", std::vector<std::string>{"Cycle","Random","Ratchet"});
-			configParam<CVRangeParamQuantity>(cvKnobParam + ni, 0.f, 1.f, 0.5f, "CV", "V")->range = &range;
+			configCVParam(cvKnobParam + ni, this, &range, "CV");
 			configInput(modeTriggerInput + ni, "Mode Trigger");
 			for(int ii = 0 ; ii < NODE_IN_MAX; ii ++){
 				char alphabet = 'X' + ii;
