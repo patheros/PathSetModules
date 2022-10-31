@@ -45,9 +45,9 @@ struct CVRange {
 
 	/**
 	 * Constructs a CVRange with a given mininum and maximum.
-     *
-     * Note cv_a is always set to min and cv_b is set to max, but if cv_a is greater than cv_b, cv_a will function as a the maxiumu and cv_b will function as the mininum.
-     */
+	 *
+	 * Note cv_a is always set to min and cv_b is set to max, but if cv_a is greater than cv_b, cv_a will function as a the maxiumu and cv_b will function as the mininum.
+	 */
 	CVRange(float min, float max){
 		cv_a = min;
 		cv_b = max;
