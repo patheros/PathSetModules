@@ -1,7 +1,7 @@
 #include "plugin.hpp"
 #include "util.hpp"
 
-#define LINE_MAX 5
+#define NUDGE_LINE_MAX 5
 #define MIN_VOLTAGE 0.01f
 
 struct Nudge : Module {
@@ -78,7 +78,7 @@ struct Nudge : Module {
 		}
 	};
 
-	Line lines [LINE_MAX];
+	Line lines [NUDGE_LINE_MAX];
 
 	int nudging;
 
@@ -137,7 +137,7 @@ struct Nudge : Module {
 		nudgeButtonDown = false;
 		nudgeTriggerHigh = false;
 
-		for(int li = 0; li < LINE_MAX; li++){
+		for(int li = 0; li < NUDGE_LINE_MAX; li++){
 			lines[li] = Line();
 		}
 
@@ -150,7 +150,7 @@ struct Nudge : Module {
 		json_object_set_new(jobj, "version", json_integer(1));
 			
 		json_t *linesJ = json_array();
-		for(int li = 0; li < LINE_MAX; li++){
+		for(int li = 0; li < NUDGE_LINE_MAX; li++){
 			json_array_insert_new(linesJ, li, lines[li].dataToJson());
 		}
 		json_object_set_new(jobj, "lines", linesJ);
@@ -162,7 +162,7 @@ struct Nudge : Module {
 
 	void dataFromJson(json_t *jobj) override {			
 		json_t *linesJ = json_object_get(jobj,"lines");
-		for(int li = 0; li < LINE_MAX; li++){
+		for(int li = 0; li < NUDGE_LINE_MAX; li++){
 			lines[li].dataFromJson(json_array_get(linesJ,li));
 		}
 		nudging = json_integer_value(json_object_get(jobj, "nudging"));
@@ -192,7 +192,7 @@ struct Nudge : Module {
 			nudging = std::floor(args.sampleRate * slew);
 			if(nudging < 1) nudging = 1;
 
-			for(int li = 0; li < LINE_MAX; li++){
+			for(int li = 0; li < NUDGE_LINE_MAX; li++){
 				if(inputCVMode == InCVMode::CHANCE){
 					//Normal odds depend on the row. They are 10%, 30%, 50%, 70%, 90%
 					float odds = inputs[CV_IN_1_INPUT + li].getNormalVoltage(1 + 2 * li) / 10.f;
@@ -219,7 +219,7 @@ struct Nudge : Module {
 		if(nudging > 0){
 			nudging --;
 
-			for(int li = 0; li < LINE_MAX; li++){
+			for(int li = 0; li < NUDGE_LINE_MAX; li++){
 				float amt = lines[li].amt + lines[li].delta;
 				lines[li].amt = clamp(amt,-1.f,1.f);
 			}
@@ -227,7 +227,7 @@ struct Nudge : Module {
 
 		int range = static_cast<int>(params[OUTPUT_RANGE_PARAM].getValue());
 
-		for(int li = 0; li < LINE_MAX; li++){
+		for(int li = 0; li < NUDGE_LINE_MAX; li++){
 			float nudge = clamp(lines[li].amt,-1.f,1.f);
 			switch(range){
 				case 0:
