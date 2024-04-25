@@ -1,6 +1,14 @@
 
 # Change Log
 
+## v2.5.0
+* +Pane - New Module!
+  * Add as many extra nodes as you want to Glass Shard with this bi-directional, chainable, expander!
+* GlassShard
+  * Added Randomize CVs and Randomize Modes option to the context menu.
+  * Added Lower performance mode in the context menu.
+  * Added ability to set custom CV range from the context menu.
+
 ## v2.4.1
 * IceTray
   * Fixed crash with Cardinal when audio device was stopped or bypassed.

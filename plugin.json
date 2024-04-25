@@ -1,7 +1,7 @@
 {
   "slug": "PathSet",
   "name": "Path Set: Free",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "license": "GPL-3.0-or-later",
   "brand": "Path Set",
   "author": "Andrew Hanson",
@@ -59,7 +59,7 @@
     {
       "slug": "PlusPane",
       "name": "+Pane",
-      "description": "Bi-directional expander for GlassPane.",
+      "description": "Bi-directional, chainable, expander for GlassPane.",
       "manualUrl": "https://github.com/patheros/PathSetManuals/blob/main/modules/GlassPane.md",
       "tags": [
         "Sequencer",
