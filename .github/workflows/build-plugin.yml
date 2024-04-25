@@ -105,7 +105,7 @@ jobs:
             ${{ env.GITHUB_REPOSITORY_NAME }} VCV Rack Plugin ${{ env.releasename }}
           draft: false
           prerelease: true
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v4
         with:
           path: _artifacts
       - name: Upload release assets
