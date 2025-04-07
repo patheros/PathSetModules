@@ -318,6 +318,13 @@ struct IceTray : Module {
 		pShifter[0] = new PitchShifter();
 		pShifter[1] = new PitchShifter();
 
+		// Initialize filter cutoffs with default sample rate (44100)
+		float defaultSampleRate = 44100.0f;
+		lowpassFilter[0].setCutoff(20000 / defaultSampleRate);
+		lowpassFilter[1].setCutoff(20000 / defaultSampleRate);
+		highpassFilter[0].setCutoff(20 / defaultSampleRate);
+		highpassFilter[1].setCutoff(20 / defaultSampleRate);
+
 		clearCubes();
 		in_Buffer[0].clear();
 		in_Buffer[1].clear();
@@ -495,11 +502,6 @@ struct IceTray : Module {
 	}
 
 	void process(const ProcessArgs& args) override {
-		lowpassFilter[0].setCutoff(20000 / args.sampleRate);
-		lowpassFilter[1].setCutoff(20000 / args.sampleRate);
-		highpassFilter[0].setCutoff(20 / args.sampleRate);
-		highpassFilter[1].setCutoff(20 / args.sampleRate);
-
 		for(int bi = 0; bi < BUFFER_COUNT; bi++){
 			bool button = params[CUBE_SWITCH_PARAM + bi].getValue() > 0;
 			if(!cubeButtonDown[bi] && button){
@@ -681,6 +683,11 @@ struct IceTray : Module {
 
 		pShifter[0]->init(PITCH_BUFF_SIZE, 8, e.sampleRate);
 		pShifter[1]->init(PITCH_BUFF_SIZE, 8, e.sampleRate);
+
+		lowpassFilter[0].setCutoff(20000 / e.sampleRate);
+		lowpassFilter[1].setCutoff(20000 / e.sampleRate);
+		highpassFilter[0].setCutoff(20 / e.sampleRate);
+		highpassFilter[1].setCutoff(20 / e.sampleRate);
 	}
 
 	void getPlaybackOuput(float & out0, float & out1, int index){
